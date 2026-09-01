@@ -3,7 +3,18 @@
 #include <GL/gl.h>
 #include <cstdio>
 #include <cstdlib>
+#include <csignal>
+#include <execinfo.h>
 #include <string>
+
+static void segv_handler(int signal)
+{
+    void *frames[64];
+    const int count = backtrace(frames, 64);
+    std::fprintf(stderr, "shader test: caught signal %d\n", signal);
+    backtrace_symbols_fd(frames, count, fileno(stderr));
+    std::_Exit(128 + signal);
+}
 
 static int fail(SDL_Window *window, SDL_GLContext context, int code, const char *message)
 {
@@ -18,6 +29,9 @@ static int fail(SDL_Window *window, SDL_GLContext context, int code, const char 
 
 int main(int argc, char **argv)
 {
+    std::signal(SIGSEGV, segv_handler);
+    std::signal(SIGABRT, segv_handler);
+
     const char *shader = argc > 1 ? argv[1] : "shaders/identity.glsl";
     const bool expect_invert = argc > 2 && std::string(argv[2]) == "invert";
 
@@ -47,19 +61,12 @@ int main(int argc, char **argv)
         return fail(window, context, 6, "OpenGL context has no GL_VERSION/GL_RENDERER");
 
     std::fprintf(stderr, "shader test: OpenGL %s / %s\n", version, renderer);
-
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR)
-    {
-        char message[64];
-        std::snprintf(message, sizeof(message), "initial OpenGL error 0x%x", error);
-        return fail(window, context, 7, message);
-    }
+    std::fprintf(stderr, "shader test: before texture setup\n");
 
     GLuint source_texture = 0;
     glGenTextures(1, &source_texture);
     if (!source_texture)
-        return fail(window, context, 8, "glGenTextures returned 0");
+        return fail(window, context, 7, "glGenTextures returned 0");
 
     glBindTexture(GL_TEXTURE_2D, source_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -71,24 +78,27 @@ int main(int argc, char **argv)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, pixel);
 
-    error = glGetError();
+    GLenum error = glGetError();
     if (error != GL_NO_ERROR)
     {
         char message[64];
         std::snprintf(message, sizeof(message), "texture setup OpenGL error 0x%x", error);
-        glDeleteTextures(1, &source_texture);
-        return fail(window, context, 9, message);
+        return fail(window, context, 8, message);
     }
 
+    std::fprintf(stderr, "shader test: before pipeline construction\n");
     ShaderPipelineV2 pipeline;
     std::string load_error;
+    std::fprintf(stderr, "shader test: before pipeline load\n");
     if (!pipeline.load(shader, load_error))
     {
-        glDeleteTextures(1, &source_texture);
-        return fail(window, context, 10, load_error.c_str());
+        return fail(window, context, 9, load_error.c_str());
     }
+    std::fprintf(stderr, "shader test: after pipeline load\n");
 
+    std::fprintf(stderr, "shader test: before pipeline apply\n");
     pipeline.apply(source_texture, 1, 1, 64, 64);
+    std::fprintf(stderr, "shader test: after pipeline apply\n");
     glFinish();
 
     error = glGetError();
@@ -96,8 +106,7 @@ int main(int argc, char **argv)
     {
         char message[64];
         std::snprintf(message, sizeof(message), "pipeline OpenGL error 0x%x", error);
-        glDeleteTextures(1, &source_texture);
-        return fail(window, context, 11, message);
+        return fail(window, context, 10, message);
     }
 
     unsigned char result[4] = { 0, 0, 0, 0 };
@@ -109,8 +118,7 @@ int main(int argc, char **argv)
     {
         char message[64];
         std::snprintf(message, sizeof(message), "readback OpenGL error 0x%x", error);
-        glDeleteTextures(1, &source_texture);
-        return fail(window, context, 12, message);
+        return fail(window, context, 11, message);
     }
 
     const unsigned char expected[4] = {
@@ -140,5 +148,5 @@ int main(int argc, char **argv)
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return ok ? 0 : 13;
+    return ok ? 0 : 12;
 }
