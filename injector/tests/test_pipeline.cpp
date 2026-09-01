@@ -1,7 +1,6 @@
 #include "shader_pipeline_v2.h"
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
-#include <GL/glext.h>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -41,7 +40,6 @@ int main(int argc, char **argv)
         return 5;
     }
 
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
     pipeline.apply(source_texture, 1, 1, 64, 64);
     glFinish();
 
