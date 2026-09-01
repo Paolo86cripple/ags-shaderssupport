@@ -5,46 +5,113 @@
 #include <cstdlib>
 #include <string>
 
+static int fail(SDL_Window *window, SDL_GLContext context, int code, const char *message)
+{
+    std::fprintf(stderr, "shader test: %s\n", message);
+    if (context)
+        SDL_GL_DeleteContext(context);
+    if (window)
+        SDL_DestroyWindow(window);
+    SDL_Quit();
+    return code;
+}
+
 int main(int argc, char **argv)
 {
     const char *shader = argc > 1 ? argv[1] : "shaders/identity.glsl";
     const bool expect_invert = argc > 2 && std::string(argv[2]) == "invert";
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) return 2;
+    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+        return 2;
+
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
     SDL_Window *window = SDL_CreateWindow("ags-shader-test", 0, 0, 64, 64,
         SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
-    if (!window) { SDL_Quit(); return 3; }
+    if (!window)
+        return fail(nullptr, nullptr, 3, SDL_GetError());
+
     SDL_GLContext context = SDL_GL_CreateContext(window);
-    if (!context) { SDL_DestroyWindow(window); SDL_Quit(); return 4; }
+    if (!context)
+        return fail(window, nullptr, 4, SDL_GetError());
+
+    if (SDL_GL_MakeCurrent(window, context) != 0)
+        return fail(window, context, 5, SDL_GetError());
+
+    const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+    const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    if (!version || !renderer)
+        return fail(window, context, 6, "OpenGL context has no GL_VERSION/GL_RENDERER");
+
+    std::fprintf(stderr, "shader test: OpenGL %s / %s\n", version, renderer);
+
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        char message[64];
+        std::snprintf(message, sizeof(message), "initial OpenGL error 0x%x", error);
+        return fail(window, context, 7, message);
+    }
 
     GLuint source_texture = 0;
     glGenTextures(1, &source_texture);
+    if (!source_texture)
+        return fail(window, context, 8, "glGenTextures returned 0");
+
     glBindTexture(GL_TEXTURE_2D, source_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
     const unsigned char pixel[4] = { 32, 64, 128, 255 };
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+
+    error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        char message[64];
+        std::snprintf(message, sizeof(message), "texture setup OpenGL error 0x%x", error);
+        glDeleteTextures(1, &source_texture);
+        return fail(window, context, 9, message);
+    }
 
     ShaderPipelineV2 pipeline;
-    std::string error;
-    if (!pipeline.load(shader, error))
+    std::string load_error;
+    if (!pipeline.load(shader, load_error))
     {
-        std::fprintf(stderr, "%s\n", error.c_str());
         glDeleteTextures(1, &source_texture);
-        SDL_GL_DeleteContext(context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 5;
+        return fail(window, context, 10, load_error.c_str());
     }
 
     pipeline.apply(source_texture, 1, 1, 64, 64);
     glFinish();
 
+    error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        char message[64];
+        std::snprintf(message, sizeof(message), "pipeline OpenGL error 0x%x", error);
+        glDeleteTextures(1, &source_texture);
+        return fail(window, context, 11, message);
+    }
+
     unsigned char result[4] = { 0, 0, 0, 0 };
+    glReadBuffer(GL_BACK);
     glReadPixels(32, 32, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, result);
+
+    error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        char message[64];
+        std::snprintf(message, sizeof(message), "readback OpenGL error 0x%x", error);
+        glDeleteTextures(1, &source_texture);
+        return fail(window, context, 12, message);
+    }
 
     const unsigned char expected[4] = {
         static_cast<unsigned char>(expect_invert ? 223 : 32),
@@ -58,14 +125,20 @@ int main(int argc, char **argv)
 
     if (!ok)
     {
-        std::fprintf(stderr, "shader output mismatch: got %u,%u,%u,%u expected %u,%u,%u,%u\n",
+        std::fprintf(stderr,
+            "shader output mismatch: got %u,%u,%u,%u expected %u,%u,%u,%u\n",
             result[0], result[1], result[2], result[3],
             expected[0], expected[1], expected[2], expected[3]);
+    }
+    else
+    {
+        std::fprintf(stderr, "shader test: PASS (%u,%u,%u,%u)\n",
+            result[0], result[1], result[2], result[3]);
     }
 
     glDeleteTextures(1, &source_texture);
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return ok ? 0 : 6;
+    return ok ? 0 : 13;
 }
