@@ -21,3 +21,11 @@ set_target_properties(ags-shader PROPERTIES
     PREFIX "lib"
     OUTPUT_NAME "ags-shader"
 )
+
+add_executable(ags-shader-pipeline-test
+    tests/test_pipeline.cpp
+    src/shader_pipeline_v2.cpp
+)
+target_include_directories(ags-shader-pipeline-test PRIVATE src)
+target_link_libraries(ags-shader-pipeline-test PRIVATE PkgConfig::SDL2 OpenGL::GL)
+target_compile_options(ags-shader-pipeline-test PRIVATE -Wall -Wextra -Wpedantic)
