@@ -1,15 +1,6 @@
 name: Build AGS Shader Injector
 
 on:
-  push:
-    branches: [ master ]
-    paths:
-      - 'injector/**'
-      - '.github/workflows/build-shader-injector.yml'
-  pull_request:
-    paths:
-      - 'injector/**'
-      - '.github/workflows/build-shader-injector.yml'
   workflow_dispatch:
 
 permissions:
