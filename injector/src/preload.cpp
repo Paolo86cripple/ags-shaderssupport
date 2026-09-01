@@ -33,6 +33,16 @@ void DebugLog(const char *format, ...)
     std::fputc('\n', stderr);
 }
 
+void LogGLErrors(const char *where)
+{
+    if (!std::getenv("AGS_SHADER_DEBUG"))
+        return;
+
+    GLenum error = GL_NO_ERROR;
+    while ((error = glGetError()) != GL_NO_ERROR)
+        DebugLog("AGS shader: OpenGL error 0x%x after %s", error, where);
+}
+
 void ResolveRealSwap()
 {
     if (!g_real_swap)
@@ -120,15 +130,14 @@ extern "C" void SDL_GL_SwapWindow(SDL_Window *window)
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glReadBuffer(GL_BACK);
-
             glBindTexture(GL_TEXTURE_2D, g_capture_texture);
             glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
                                 0, 0, width, height);
             glBindTexture(GL_TEXTURE_2D, 0);
+            LogGLErrors("framebuffer capture");
 
-            log_gl_error("framebuffer capture");
             g_pipeline.apply(g_capture_texture, width, height, width, height);
-            log_gl_error("post-processing");
+            LogGLErrors("post-processing");
 
             glReadBuffer(static_cast<GLenum>(old_read_buffer));
         }
