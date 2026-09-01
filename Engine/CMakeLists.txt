@@ -72,27 +72,23 @@ target_sources(engine
     ac/dynobj/cc_hotspot.h
     ac/dynobj/cc_inventory.cpp
     ac/dynobj/cc_inventory.h
-    ac/dynobj/cc_label.cpp
-    ac/dynobj/cc_label.h
-    ac/dynobj/cc_listbox.cpp
-    ac/dynobj/cc_listbox.h
     ac/dynobj/cc_object.cpp
     ac/dynobj/cc_object.h
-    ac/dynobj/cc_overlay.cpp
-    ac/dynobj/cc_overlay.h
     ac/dynobj/cc_region.cpp
     ac/dynobj/cc_region.h
     ac/dynobj/cc_serializer.cpp
     ac/dynobj/cc_serializer.h
-    ac/dynobj/managedobjectpool.cpp
-    ac/dynobj/managedobjectpool.h
-    ac/dynobj/managedobject.cpp
-    ac/dynobj/managedobject.h
+    ac/dynobj/dynobj_manager.cpp
+    ac/dynobj/dynobj_manager.h
+    ac/dynobj/scriptaudiochannel.h
+    ac/dynobj/scriptcamera.cpp
+    ac/dynobj/scriptcamera.h
     ac/dynobj/scriptcontainers.h
     ac/dynobj/scriptdatetime.cpp
     ac/dynobj/scriptdatetime.h
-    ac/dynobj/scriptdialog.cpp
     ac/dynobj/scriptdialog.h
+    ac/dynobj/scriptdialogoptionsrendering.cpp
+    ac/dynobj/scriptdialogoptionsrendering.h
     ac/dynobj/scriptdict.cpp
     ac/dynobj/scriptdict.h
     ac/dynobj/scriptdrawingsurface.cpp
@@ -101,36 +97,28 @@ target_sources(engine
     ac/dynobj/scriptdynamicsprite.h
     ac/dynobj/scriptfile.cpp
     ac/dynobj/scriptfile.h
-    ac/dynobj/scriptgui.cpp
     ac/dynobj/scriptgui.h
-    ac/dynobj/scripthotspot.cpp
     ac/dynobj/scripthotspot.h
-    ac/dynobj/scriptinvitem.cpp
     ac/dynobj/scriptinvitem.h
-    ac/dynobj/scriptlabel.cpp
-    ac/dynobj/scriptlabel.h
-    ac/dynobj/scriptlistbox.cpp
-    ac/dynobj/scriptlistbox.h
-    ac/dynobj/scriptmouse.cpp
     ac/dynobj/scriptmouse.h
+    ac/dynobj/scriptmouse.cpp
+    ac/dynobj/scriptobject.h
     ac/dynobj/scriptoverlay.cpp
     ac/dynobj/scriptoverlay.h
-    ac/dynobj/scriptobject.cpp
-    ac/dynobj/scriptobject.h
-    ac/dynobj/scriptregion.cpp
     ac/dynobj/scriptregion.h
-    ac/dynobj/scriptsystem.cpp
-    ac/dynobj/scriptsystem.h
+    ac/dynobj/scriptrestoredsaveinfo.h
+    ac/dynobj/scriptset.cpp
+    ac/dynobj/scriptset.h
     ac/dynobj/scriptstring.cpp
     ac/dynobj/scriptstring.h
+    ac/dynobj/scriptsystem.h
+    ac/dynobj/scriptsystem.cpp
     ac/dynobj/scriptuserobject.cpp
     ac/dynobj/scriptuserobject.h
     ac/dynobj/scriptviewframe.cpp
     ac/dynobj/scriptviewframe.h
     ac/dynobj/scriptviewport.cpp
     ac/dynobj/scriptviewport.h
-    ac/drawingsurface.cpp
-    ac/drawingsurface.h
     ac/event.cpp
     ac/event.h
     ac/file.cpp
@@ -141,7 +129,6 @@ target_sources(engine
     ac/gamestate.cpp
     ac/gamestate.h
     ac/global_api.cpp
-    ac/global_api.h
     ac/global_audio.cpp
     ac/global_audio.h
     ac/global_button.cpp
@@ -193,7 +180,6 @@ target_sources(engine
     ac/global_slider.cpp
     ac/global_slider.h
     ac/global_string.cpp
-    ac/global_string.cpp
     ac/global_string.h
     ac/global_textbox.cpp
     ac/global_textbox.h
@@ -229,8 +215,85 @@ target_sources(engine
     ac/lipsync.h
     ac/listbox.cpp
     ac/listbox.h
-    main/graphics_mode.cpp
-    main/graphics_mode.h
+    ac/math.cpp
+    ac/math.h
+    ac/mouse.cpp
+    ac/mouse.h
+    ac/movelist.cpp
+    ac/movelist.h
+    ac/object.cpp
+    ac/object.h
+    ac/overlay.cpp
+    ac/overlay.h
+    ac/parser.cpp
+    ac/parser.h
+    ac/path_helper.h
+    ac/properties.cpp
+    ac/properties.h
+    ac/region.cpp
+    ac/region.h
+    ac/room.cpp
+    ac/room.h
+    ac/roomobject.cpp
+    ac/roomobject.h
+    ac/roomstatus.cpp
+    ac/roomstatus.h
+    ac/route_finder.cpp
+    ac/route_finder.h
+    ac/route_finder_impl.cpp
+    ac/route_finder_impl.h
+    ac/route_finder_impl_legacy.cpp
+    ac/route_finder_impl_legacy.h
+    ac/route_finder_jps.inl
+    ac/runtime_defines.h
+    ac/screen.cpp
+    ac/screen.h
+    ac/screenoverlay.cpp
+    ac/screenoverlay.h
+    ac/scriptcontainers.cpp
+    ac/slider.cpp
+    ac/slider.h
+    ac/speech.cpp
+    ac/speech.h
+    ac/sprite.cpp
+    ac/sprite.h
+    ac/dynobj/scriptgame.cpp
+    ac/dynobj/scriptgame.h
+    ac/dynobj/cc_staticarray.cpp
+    ac/dynobj/cc_staticarray.h
+    ac/string.cpp
+    ac/string.h
+    ac/sys_events.cpp
+    ac/sys_events.h
+    ac/system.cpp
+    ac/system.h
+    ac/textbox.cpp
+    ac/textbox.h
+    ac/timer.cpp
+    ac/timer.h
+    ac/translation.cpp
+    ac/translation.h
+    ac/utils_script.cpp
+    ac/viewframe.cpp
+    ac/viewframe.h
+    ac/viewport_script.cpp
+    ac/walkablearea.cpp
+    ac/walkablearea.h
+    ac/walkbehind.cpp
+    ac/walkbehind.h
+    debug/agseditordebugger.h
+    debug/debug.cpp
+    debug/debug_log.h
+    debug/debugger.h
+    debug/dummyagsdebugger.h
+    debug/filebasedagsdebugger.cpp
+    debug/filebasedagsdebugger.h
+    debug/logfile.cpp
+    debug/logfile.h
+    device/mousew32.cpp
+    device/mousew32.h
+    game/game_init.cpp
+    game/game_init.h
     game/savegame.cpp
     game/savegame.h
     game/savegame_components.cpp
@@ -241,8 +304,6 @@ target_sources(engine
     gfx/ali3dexception.h
     gfx/ali3dogl.cpp
     gfx/ali3dogl.h
-    gfx/ags_shader_pipeline.cpp
-    gfx/ags_shader_pipeline.h
     gfx/ali3dsw.cpp
     gfx/ali3dsw.h
     gfx/blender.cpp
@@ -305,6 +366,8 @@ target_sources(engine
     main/game_run.h
     main/game_start.cpp
     main/game_start.h
+    main/graphics_mode.cpp
+    main/graphics_mode.h
     main/main.cpp
     main/main.h
     main/quit.cpp
@@ -325,7 +388,6 @@ target_sources(engine
     media/audio/sdldecoder.h
     media/audio/openalsource.cpp
     media/audio/openalsource.h
-    media/audio/openal.h
     media/audio/queuedaudioitem.cpp
     media/audio/queuedaudioitem.h
     media/audio/sound.cpp
@@ -390,20 +452,25 @@ target_sources(engine
     platform/windows/setup/basicpagedialog.h
     platform/windows/setup/advancedpagedialog.cpp
     platform/windows/setup/advancedpagedialog.h
-    platform/windows/setup/basicpagedialog.cpp
-    platform/windows/setup/basicpagedialog.h
-    platform/windows/setup/advancedpagedialog.cpp
-    platform/windows/setup/advancedpagedialog.h
     platform/windows/minidump.cpp
     platform/windows/win_ex_handling.cpp
-    platform/windows/win_ex_handling.h
 
     platform/linux/acpllnx.cpp
+
     platform/osx/acplmac.cpp
+
     platform/android/acpland.cpp
+
     platform/ios/acplios.cpp
+
     platform/emscripten/acpemscripten.cpp
+
     platform/bsd/acplbsd.cpp
+
+    platform/windows/win_ex_handling.cpp
+    platform/windows/win_ex_handling.h
+    platform/windows/minidump.cpp
+    platform/windows/winapi_exclusive.h
 
     platform/base/mobile_base.cpp
     platform/base/mobile_base.h
