@@ -161,6 +161,55 @@ target_sources(engine
     ac/global_invwindow.h
     ac/global_label.cpp
     ac/global_label.h
+    ac/global_listbox.cpp
+    ac/global_listbox.h
+    ac/global_mouse.cpp
+    ac/global_mouse.h
+    ac/global_object.cpp
+    ac/global_object.h
+    ac/global_overlay.cpp
+    ac/global_overlay.h
+    ac/global_palette.cpp
+    ac/global_palette.h
+    ac/global_region.cpp
+    ac/global_region.h
+    ac/global_screen.cpp
+    ac/global_screen.h
+    ac/global_slider.cpp
+    ac/global_slider.h
+    ac/global_string.cpp
+    ac/global_string.h
+    ac/global_textbox.cpp
+    ac/global_textbox.h
+    ac/global_timer.cpp
+    ac/global_timer.h
+    ac/global_translation.cpp
+    ac/global_translation.h
+    ac/global_video.cpp
+    ac/global_video.h
+    ac/global_viewframe.cpp
+    ac/global_viewframe.h
+    ac/global_viewport.cpp
+    ac/global_viewport.h
+    ac/global_walkablearea.cpp
+    ac/global_walkablearea.h
+    ac/global_walkbehind.cpp
+    ac/global_walkbehind.h
+    ac/gui.cpp
+    ac/gui.h
+    ac/guicontrol.cpp
+    ac/guicontrol.h
+    ac/guiinv.cpp
+    ac/hotspot.cpp
+    ac/hotspot.h
+    ac/interfacebutton.cpp
+    ac/interfaceelement.cpp
+    ac/inventoryitem.cpp
+    ac/inventoryitem.h
+    ac/invwindow.cpp
+    ac/invwindow.h
+    ac/label.cpp
+    ac/label.h
     ac/lipsync.h
     ac/listbox.cpp
     ac/listbox.h
@@ -467,15 +516,25 @@ if (AGS_BUILTIN_PLUGINS)
         ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthFont.h
         ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.cpp
         ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.h
-        ../Plugins/agsflashlight/agsflashlight/agsflashlight.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontRendererClifftopGames.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontRendererClifftopGames.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/color.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/color.h
+
+        ../Plugins/agstouch/agstouch/agstouch.cpp
+        ../Plugins/agstouch/agstouch/agstouch.h
+
+        ../Plugins/agspalrender/agspalrender/palrender.h
+        ../Plugins/agspalrender/agspalrender/ags_palrender.cpp
+        ../Plugins/agspalrender/agspalrender/raycast.cpp
+        ../Plugins/agspalrender/agspalrender/raycast.h
     )
 endif()
 
 if (AGS_BUILD_STR)
     target_compile_definitions(engine PUBLIC BUILD_STR=\"${AGS_BUILD_STR}\")
 endif()
+
 
 target_link_libraries(engine PUBLIC 
     AGS::Common 
@@ -497,6 +556,8 @@ else()
     target_link_libraries(engine PUBLIC Glad::Glad)
 endif (AGS_OPENGLES2)
 
+# common has a circular dependency on engine
+# TODO: currently required for gcc support, will look into this.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 target_link_libraries(common PUBLIC engine)
 endif ()
@@ -521,8 +582,11 @@ if(ANDROID)
 endif()
 
 get_target_property(ENGINE_SOURCES engine SOURCES)
+# Set ROOT to parent directory to include Plugins/
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/.. PREFIX "Source Files" FILES ${ENGINE_SOURCES})
 
+# Standalone exe
+# -----------------------------------------------------------------------------
 if (NOT ANDROID)
     add_executable(ags)
 else ()
@@ -539,10 +603,16 @@ set_target_properties(ags PROPERTIES
 )
 
 target_include_directories(ags PRIVATE .)
-target_sources(ags PRIVATE main/main_sdl2.cpp)
+
+target_sources(ags
+    PRIVATE
+    main/main_sdl2.cpp
+)
+
 target_link_libraries(ags PRIVATE engine ${SDL2MAIN_LIBRARY})
 
 if (LINUX)
+    # We may override `allegro_icon` and `load_midi_pf` depending on the version
     target_link_options(ags PRIVATE -Wl,--allow-multiple-definition)
 endif ()
 
@@ -553,7 +623,9 @@ set_target_properties(ags PROPERTIES
 
 if (WIN32)
     target_sources(ags PRIVATE resource/version.rc)
-    set_target_properties(ags PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(ags PROPERTIES
+        WIN32_EXECUTABLE TRUE
+    )
     if (CMAKE_SIZEOF_VOID_P EQUAL 4)
         if (MINGW)
             target_link_options(ags PUBLIC "-Wl,--large-address-aware")
@@ -565,23 +637,47 @@ if (WIN32)
 endif()
 
 if(AGS_TESTS)
-    add_executable(engine_test test/scsprintf_test.cpp test/systemimports_test.cpp)
+    add_executable(
+        engine_test
+        test/scsprintf_test.cpp
+        test/systemimports_test.cpp
+    )
     set_target_properties(engine_test PROPERTIES
-        CXX_STANDARD 11 CXX_EXTENSIONS NO C_STANDARD 11 C_EXTENSIONS NO
-        INTERPROCEDURAL_OPTIMIZATION FALSE)
-    target_link_libraries(engine_test engine common gtest_main)
+        CXX_STANDARD 11
+        CXX_EXTENSIONS NO
+        C_STANDARD 11
+        C_EXTENSIONS NO
+        INTERPROCEDURAL_OPTIMIZATION FALSE
+        )
+    target_link_libraries(
+        engine_test
+        engine
+        common
+        gtest_main
+    )
     if(AGS_USE_LOCAL_GTEST)
         target_link_libraries(engine_test gtest)
     endif()
+
     include(GoogleTest)
     gtest_add_tests(TARGET engine_test)
 endif()
 
+# macOS App Bundle
+# -----------------------------------------------------------------------------
+
 if (MACOS)
     add_executable(ags-app)
-    set_target_properties(ags-app PROPERTIES CXX_STANDARD 11 CXX_EXTENSIONS NO)
+
+    set_target_properties(ags-app PROPERTIES
+        CXX_STANDARD 11
+        CXX_EXTENSIONS NO
+    )
+
     target_include_directories(ags-app PRIVATE .)
-    file(GLOB RESOURCE_FILES CONFIGURE_DEPENDS
+
+    file(GLOB RESOURCE_FILES
+        CONFIGURE_DEPENDS
         ../OSX/Resources/ags.icns
         ../OSX/Resources/*.ags
         ../OSX/Resources/acsetup.cfg
@@ -589,18 +685,38 @@ if (MACOS)
         ../OSX/Resources/music.vox
         ../OSX/Resources/speech.vox
         ../OSX/Resources/*.vox
-        ../OSX/Resources/PrivacyInfo.xcprivacy)
-    target_sources(ags-app PRIVATE main/main_sdl2.cpp ${RESOURCE_FILES})
+        ../OSX/Resources/PrivacyInfo.xcprivacy
+    )
+
+    target_sources(ags-app
+        PRIVATE
+        main/main_sdl2.cpp
+        ${RESOURCE_FILES}
+    )
+
     target_link_libraries(ags-app PRIVATE engine SDL2::SDL2main)
+
     set_target_properties(ags-app PROPERTIES
-        RUNTIME_OUTPUT_NAME AGS RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-        MACOSX_BUNDLE TRUE RESOURCE "${RESOURCE_FILES}"
-        MACOSX_BUNDLE_GUI_IDENTIFIER uk.co.adventuregamestudio.ags
-        MACOSX_BUNDLE_BUNDLE_NAME AGS
-        MACOSX_BUNDLE_ICON_FILE ags.icns
-        MACOSX_BUNDLE_BUNDLE_VERSION 1.0.0
-        MACOSX_BUNDLE_LONG_VERSION_STRING 1.0.0
-        MACOSX_BUNDLE_SHORT_VERSION_STRING 1.0.0
-        MACOSX_BUNDLE_COPYRIGHT "Copyright (C) 1999-2011 Chris Jones and 2011-2026 others"
-        MACOSX_BUNDLE_INFO_STRING "Created by Adventure Game Studio")
+        RUNTIME_OUTPUT_NAME AGS
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        MACOSX_BUNDLE TRUE
+        RESOURCE "${RESOURCE_FILES}"  # *must* be part of target sources too
+
+        MACOSX_BUNDLE_GUI_IDENTIFIER
+            uk.co.adventuregamestudio.ags
+        MACOSX_BUNDLE_BUNDLE_NAME
+            AGS
+        MACOSX_BUNDLE_ICON_FILE
+            ags.icns
+        MACOSX_BUNDLE_BUNDLE_VERSION
+            1.0.0
+        MACOSX_BUNDLE_LONG_VERSION_STRING
+            1.0.0
+        MACOSX_BUNDLE_SHORT_VERSION_STRING
+            1.0.0
+        MACOSX_BUNDLE_COPYRIGHT
+            "Copyright (C) 1999-2011 Chris Jones and 2011-2026 others"
+        MACOSX_BUNDLE_INFO_STRING
+            "Created by Adventure Game Studio"
+    )
 endif()
