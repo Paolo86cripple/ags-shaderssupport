@@ -161,57 +161,6 @@ target_sources(engine
     ac/global_invwindow.h
     ac/global_label.cpp
     ac/global_label.h
-    ac/global_listbox.cpp
-    ac/global_listbox.h
-    ac/global_mouse.cpp
-    ac/global_mouse.h
-    ac/global_object.cpp
-    ac/global_object.h
-    ac/global_overlay.cpp
-    ac/global_overlay.h
-    ac/global_palette.cpp
-    ac/global_palette.h
-    ac/global_region.cpp
-    ac/global_region.h
-    ac/global_room.cpp
-    ac/global_room.h
-    ac/global_screen.cpp
-    ac/global_screen.h
-    ac/global_slider.cpp
-    ac/global_slider.h
-    ac/global_string.cpp
-    ac/global_string.h
-    ac/global_textbox.cpp
-    ac/global_textbox.h
-    ac/global_timer.cpp
-    ac/global_timer.h
-    ac/global_translation.cpp
-    ac/global_translation.h
-    ac/global_video.cpp
-    ac/global_video.h
-    ac/global_viewframe.cpp
-    ac/global_viewframe.h
-    ac/global_viewport.cpp
-    ac/global_viewport.h
-    ac/global_walkablearea.cpp
-    ac/global_walkablearea.h
-    ac/global_walkbehind.cpp
-    ac/global_walkbehind.h
-    ac/gui.cpp
-    ac/gui.h
-    ac/guicontrol.cpp
-    ac/guicontrol.h
-    ac/guiinv.cpp
-    ac/hotspot.cpp
-    ac/hotspot.h
-    ac/interfacebutton.cpp
-    ac/interfaceelement.cpp
-    ac/inventoryitem.cpp
-    ac/inventoryitem.h
-    ac/invwindow.cpp
-    ac/invwindow.h
-    ac/label.cpp
-    ac/label.h
     ac/lipsync.h
     ac/listbox.cpp
     ac/listbox.h
@@ -388,6 +337,7 @@ target_sources(engine
     media/audio/sdldecoder.h
     media/audio/openalsource.cpp
     media/audio/openalsource.h
+    media/audio/openal.h
     media/audio/queuedaudioitem.cpp
     media/audio/queuedaudioitem.h
     media/audio/sound.cpp
@@ -475,3 +425,182 @@ target_sources(engine
     platform/base/mobile_base.cpp
     platform/base/mobile_base.h
 )
+
+if(ANDROID)
+    target_sources(engine PRIVATE
+        platform/android/helper/jni_helper.cpp)
+endif()
+
+if(MACOS)
+    target_sources(engine PRIVATE 
+        platform/osx/alplmac.mm
+    )
+endif()
+
+if (AGS_BUILTIN_PLUGINS)
+    target_compile_definitions(engine PRIVATE BUILTIN_PLUGINS)
+
+    target_sources(engine PRIVATE 
+        ../Plugins/agsblend/agsblend/AGSBlend.cpp
+        ../Plugins/agsblend/agsblend/agsblend.h
+
+        ../Plugins/agsflashlight/agsflashlight/agsflashlight.cpp
+        ../Plugins/agsflashlight/agsflashlight/agsflashlight.h
+
+        ../Plugins/ags_parallax/ags_parallax/ags_parallax.cpp
+        ../Plugins/ags_parallax/ags_parallax/ags_parallax.h
+
+        ../Plugins/ags_snowrain/ags_snowrain/ags_snowrain.cpp
+        ../Plugins/ags_snowrain/ags_snowrain/ags_snowrain.h
+
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/AGSSpriteFont.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/AGSSpriteFont.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/CharacterEntry.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/CharacterEntry.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFont.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFont.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRenderer.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRenderer.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRendererClifftopGames.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRendererClifftopGames.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthFont.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthFont.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.h
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.h
+        ../Plugins/agsflashlight/agsflashlight/agsflashlight.cpp
+    )
+endif()
+
+if (AGS_BUILD_STR)
+    target_compile_definitions(engine PUBLIC BUILD_STR=\"${AGS_BUILD_STR}\")
+endif()
+
+target_link_libraries(engine PUBLIC 
+    AGS::Common 
+    ${CMAKE_DL_LIBS} 
+    Allegro::Allegro 
+    Cda::Cda
+    External::OpenAL
+    ${SDL2_LIBRARY}
+    SDL2_sound::SDL2_sound
+)
+
+if(NOT AGS_DISABLE_THREADS)
+    target_link_libraries(engine PUBLIC Threads::Threads)
+endif()
+
+if (AGS_OPENGLES2)
+    target_link_libraries(engine PUBLIC EGL GLESv2 Glad::GladGLES2)
+else()
+    target_link_libraries(engine PUBLIC Glad::Glad)
+endif (AGS_OPENGLES2)
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+target_link_libraries(common PUBLIC engine)
+endif ()
+
+if (WIN32 OR LINUX)
+    target_compile_definitions(engine PRIVATE AGS_HAS_CD_AUDIO)
+endif ()
+
+if (AGS_NO_VIDEO_PLAYER)
+    target_compile_definitions(engine PRIVATE AGS_NO_VIDEO_PLAYER)
+else()
+    target_link_libraries(engine PUBLIC Apeg::Apeg)
+endif()
+
+if (WIN32)
+    target_link_libraries(engine PUBLIC shlwapi)
+endif()
+
+if(ANDROID)
+    find_library(ANDROID_LOG_LIB log)
+    target_link_libraries(engine PUBLIC ${ANDROID_LOG_LIB})
+endif()
+
+get_target_property(ENGINE_SOURCES engine SOURCES)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/.. PREFIX "Source Files" FILES ${ENGINE_SOURCES})
+
+if (NOT ANDROID)
+    add_executable(ags)
+else ()
+    add_library(ags SHARED)
+endif (NOT ANDROID)
+
+if (AGS_DESKTOP)
+    install(TARGETS ags RUNTIME DESTINATION bin)
+endif ()
+
+set_target_properties(ags PROPERTIES
+    CXX_STANDARD 11
+    CXX_EXTENSIONS NO
+)
+
+target_include_directories(ags PRIVATE .)
+target_sources(ags PRIVATE main/main_sdl2.cpp)
+target_link_libraries(ags PRIVATE engine ${SDL2MAIN_LIBRARY})
+
+if (LINUX)
+    target_link_options(ags PRIVATE -Wl,--allow-multiple-definition)
+endif ()
+
+set_target_properties(ags PROPERTIES
+    RUNTIME_OUTPUT_NAME ags
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+if (WIN32)
+    target_sources(ags PRIVATE resource/version.rc)
+    set_target_properties(ags PROPERTIES WIN32_EXECUTABLE TRUE)
+    if (CMAKE_SIZEOF_VOID_P EQUAL 4)
+        if (MINGW)
+            target_link_options(ags PUBLIC "-Wl,--large-address-aware")
+        endif ()
+        if (MSVC)
+            target_link_options(ags PUBLIC "/LARGEADDRESSAWARE")
+        endif ()
+    endif ()
+endif()
+
+if(AGS_TESTS)
+    add_executable(engine_test test/scsprintf_test.cpp test/systemimports_test.cpp)
+    set_target_properties(engine_test PROPERTIES
+        CXX_STANDARD 11 CXX_EXTENSIONS NO C_STANDARD 11 C_EXTENSIONS NO
+        INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_link_libraries(engine_test engine common gtest_main)
+    if(AGS_USE_LOCAL_GTEST)
+        target_link_libraries(engine_test gtest)
+    endif()
+    include(GoogleTest)
+    gtest_add_tests(TARGET engine_test)
+endif()
+
+if (MACOS)
+    add_executable(ags-app)
+    set_target_properties(ags-app PROPERTIES CXX_STANDARD 11 CXX_EXTENSIONS NO)
+    target_include_directories(ags-app PRIVATE .)
+    file(GLOB RESOURCE_FILES CONFIGURE_DEPENDS
+        ../OSX/Resources/ags.icns
+        ../OSX/Resources/*.ags
+        ../OSX/Resources/acsetup.cfg
+        ../OSX/Resources/audio.vox
+        ../OSX/Resources/music.vox
+        ../OSX/Resources/speech.vox
+        ../OSX/Resources/*.vox
+        ../OSX/Resources/PrivacyInfo.xcprivacy)
+    target_sources(ags-app PRIVATE main/main_sdl2.cpp ${RESOURCE_FILES})
+    target_link_libraries(ags-app PRIVATE engine SDL2::SDL2main)
+    set_target_properties(ags-app PROPERTIES
+        RUNTIME_OUTPUT_NAME AGS RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        MACOSX_BUNDLE TRUE RESOURCE "${RESOURCE_FILES}"
+        MACOSX_BUNDLE_GUI_IDENTIFIER uk.co.adventuregamestudio.ags
+        MACOSX_BUNDLE_BUNDLE_NAME AGS
+        MACOSX_BUNDLE_ICON_FILE ags.icns
+        MACOSX_BUNDLE_BUNDLE_VERSION 1.0.0
+        MACOSX_BUNDLE_LONG_VERSION_STRING 1.0.0
+        MACOSX_BUNDLE_SHORT_VERSION_STRING 1.0.0
+        MACOSX_BUNDLE_COPYRIGHT "Copyright (C) 1999-2011 Chris Jones and 2011-2026 others"
+        MACOSX_BUNDLE_INFO_STRING "Created by Adventure Game Studio")
+endif()
