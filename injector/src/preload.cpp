@@ -1,5 +1,4 @@
 #include "shader_pipeline_v2.h"
-
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
 #include <dlfcn.h>
@@ -115,7 +114,24 @@ extern "C" void SDL_GL_SwapWindow(SDL_Window *window)
             glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
             glBindTexture(GL_TEXTURE_2D, 0);
 
+            // AGS uses VBOs in its normal renderer. Our fullscreen quad uses
+            // client-side vertex arrays on the compatibility profile, so isolate
+            // the shader pass from the currently bound array buffer.
+            GLint old_array_buffer = 0;
+            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+            const GLenum copy_error = glGetError();
+            if (copy_error != GL_NO_ERROR)
+                DebugLog("AGS shader: OpenGL error after capture: 0x%x", copy_error);
+
             g_pipeline.apply(g_capture_texture, width, height, width, height);
+
+            const GLenum shader_error = glGetError();
+            if (shader_error != GL_NO_ERROR)
+                DebugLog("AGS shader: OpenGL error after pipeline: 0x%x", shader_error);
+
+            glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(old_array_buffer));
         }
     }
 
