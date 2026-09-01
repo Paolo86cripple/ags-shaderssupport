@@ -38,7 +38,7 @@ jobs:
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/identity.glsl
 
       - name: Smoke test multipass chain
-        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/invert-chain.agschain
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/invert-chain.agschain invert
 
       - name: Smoke test GLSL preset loader
         run: |
