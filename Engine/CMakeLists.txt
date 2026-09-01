@@ -72,25 +72,27 @@ target_sources(engine
     ac/dynobj/cc_hotspot.h
     ac/dynobj/cc_inventory.cpp
     ac/dynobj/cc_inventory.h
+    ac/dynobj/cc_label.cpp
+    ac/dynobj/cc_label.h
+    ac/dynobj/cc_listbox.cpp
+    ac/dynobj/cc_listbox.h
     ac/dynobj/cc_object.cpp
     ac/dynobj/cc_object.h
+    ac/dynobj/cc_overlay.cpp
+    ac/dynobj/cc_overlay.h
     ac/dynobj/cc_region.cpp
     ac/dynobj/cc_region.h
     ac/dynobj/cc_serializer.cpp
     ac/dynobj/cc_serializer.h
-    ac/dynobj/dynobj_manager.cpp
-    ac/dynobj/dynobj_manager.h
     ac/dynobj/managedobjectpool.cpp
     ac/dynobj/managedobjectpool.h
-    ac/dynobj/scriptaudiochannel.h
-    ac/dynobj/scriptcamera.cpp
-    ac/dynobj/scriptcamera.h
+    ac/dynobj/managedobject.cpp
+    ac/dynobj/managedobject.h
     ac/dynobj/scriptcontainers.h
     ac/dynobj/scriptdatetime.cpp
     ac/dynobj/scriptdatetime.h
+    ac/dynobj/scriptdialog.cpp
     ac/dynobj/scriptdialog.h
-    ac/dynobj/scriptdialogoptionsrendering.cpp
-    ac/dynobj/scriptdialogoptionsrendering.h
     ac/dynobj/scriptdict.cpp
     ac/dynobj/scriptdict.h
     ac/dynobj/scriptdrawingsurface.cpp
@@ -99,28 +101,36 @@ target_sources(engine
     ac/dynobj/scriptdynamicsprite.h
     ac/dynobj/scriptfile.cpp
     ac/dynobj/scriptfile.h
+    ac/dynobj/scriptgui.cpp
     ac/dynobj/scriptgui.h
+    ac/dynobj/scripthotspot.cpp
     ac/dynobj/scripthotspot.h
+    ac/dynobj/scriptinvitem.cpp
     ac/dynobj/scriptinvitem.h
-    ac/dynobj/scriptmouse.h
+    ac/dynobj/scriptlabel.cpp
+    ac/dynobj/scriptlabel.h
+    ac/dynobj/scriptlistbox.cpp
+    ac/dynobj/scriptlistbox.h
     ac/dynobj/scriptmouse.cpp
-    ac/dynobj/scriptobject.h
+    ac/dynobj/scriptmouse.h
     ac/dynobj/scriptoverlay.cpp
     ac/dynobj/scriptoverlay.h
+    ac/dynobj/scriptobject.cpp
+    ac/dynobj/scriptobject.h
+    ac/dynobj/scriptregion.cpp
     ac/dynobj/scriptregion.h
-    ac/dynobj/scriptrestoredsaveinfo.h
-    ac/dynobj/scriptset.cpp
-    ac/dynobj/scriptset.h
+    ac/dynobj/scriptsystem.cpp
+    ac/dynobj/scriptsystem.h
     ac/dynobj/scriptstring.cpp
     ac/dynobj/scriptstring.h
-    ac/dynobj/scriptsystem.h
-    ac/dynobj/scriptsystem.cpp
     ac/dynobj/scriptuserobject.cpp
     ac/dynobj/scriptuserobject.h
     ac/dynobj/scriptviewframe.cpp
     ac/dynobj/scriptviewframe.h
     ac/dynobj/scriptviewport.cpp
     ac/dynobj/scriptviewport.h
+    ac/drawingsurface.cpp
+    ac/drawingsurface.h
     ac/event.cpp
     ac/event.h
     ac/file.cpp
@@ -131,6 +141,7 @@ target_sources(engine
     ac/gamestate.cpp
     ac/gamestate.h
     ac/global_api.cpp
+    ac/global_api.h
     ac/global_audio.cpp
     ac/global_audio.h
     ac/global_button.cpp
@@ -182,6 +193,7 @@ target_sources(engine
     ac/global_slider.cpp
     ac/global_slider.h
     ac/global_string.cpp
+    ac/global_string.cpp
     ac/global_string.h
     ac/global_textbox.cpp
     ac/global_textbox.h
@@ -217,85 +229,8 @@ target_sources(engine
     ac/lipsync.h
     ac/listbox.cpp
     ac/listbox.h
-    ac/math.cpp
-    ac/math.h
-    ac/mouse.cpp
-    ac/mouse.h
-    ac/movelist.cpp
-    ac/movelist.h
-    ac/object.cpp
-    ac/object.h
-    ac/overlay.cpp
-    ac/overlay.h
-    ac/parser.cpp
-    ac/parser.h
-    ac/path_helper.h
-    ac/properties.cpp
-    ac/properties.h
-    ac/region.cpp
-    ac/region.h
-    ac/room.cpp
-    ac/room.h
-    ac/roomobject.cpp
-    ac/roomobject.h
-    ac/roomstatus.cpp
-    ac/roomstatus.h
-    ac/route_finder.cpp
-    ac/route_finder.h
-    ac/route_finder_impl.cpp
-    ac/route_finder_impl.h
-    ac/route_finder_impl_legacy.cpp
-    ac/route_finder_impl_legacy.h
-    ac/route_finder_jps.inl
-    ac/runtime_defines.h
-    ac/screen.cpp
-    ac/screen.h
-    ac/screenoverlay.cpp
-    ac/screenoverlay.h
-    ac/scriptcontainers.cpp
-    ac/slider.cpp
-    ac/slider.h
-    ac/speech.cpp
-    ac/speech.h
-    ac/sprite.cpp
-    ac/sprite.h
-    ac/dynobj/scriptgame.cpp
-    ac/dynobj/scriptgame.h
-    ac/dynobj/cc_staticarray.cpp
-    ac/dynobj/cc_staticarray.h
-    ac/string.cpp
-    ac/string.h
-    ac/sys_events.cpp
-    ac/sys_events.h
-    ac/system.cpp
-    ac/system.h
-    ac/textbox.cpp
-    ac/textbox.h
-    ac/timer.cpp
-    ac/timer.h
-    ac/translation.cpp
-    ac/translation.h
-    ac/utils_script.cpp
-    ac/viewframe.cpp
-    ac/viewframe.h
-    ac/viewport_script.cpp
-    ac/walkablearea.cpp
-    ac/walkablearea.h
-    ac/walkbehind.cpp
-    ac/walkbehind.h
-    debug/agseditordebugger.h
-    debug/debug.cpp
-    debug/debug_log.h
-    debug/debugger.h
-    debug/dummyagsdebugger.h
-    debug/filebasedagsdebugger.cpp
-    debug/filebasedagsdebugger.h
-    debug/logfile.cpp
-    debug/logfile.h
-    device/mousew32.cpp
-    device/mousew32.h
-    game/game_init.cpp
-    game/game_init.h
+    main/graphics_mode.cpp
+    main/graphics_mode.h
     game/savegame.cpp
     game/savegame.h
     game/savegame_components.cpp
@@ -306,6 +241,8 @@ target_sources(engine
     gfx/ali3dexception.h
     gfx/ali3dogl.cpp
     gfx/ali3dogl.h
+    gfx/ags_shader_pipeline.cpp
+    gfx/ags_shader_pipeline.h
     gfx/ali3dsw.cpp
     gfx/ali3dsw.h
     gfx/blender.cpp
@@ -368,8 +305,6 @@ target_sources(engine
     main/game_run.h
     main/game_start.cpp
     main/game_start.h
-    main/graphics_mode.cpp
-    main/graphics_mode.h
     main/main.cpp
     main/main.h
     main/quit.cpp
@@ -455,279 +390,21 @@ target_sources(engine
     platform/windows/setup/basicpagedialog.h
     platform/windows/setup/advancedpagedialog.cpp
     platform/windows/setup/advancedpagedialog.h
+    platform/windows/setup/basicpagedialog.cpp
+    platform/windows/setup/basicpagedialog.h
+    platform/windows/setup/advancedpagedialog.cpp
+    platform/windows/setup/advancedpagedialog.h
     platform/windows/minidump.cpp
-    platform/windows/win_ex_handling.cpp
-
-    platform/linux/acpllnx.cpp
-
-    platform/osx/acplmac.cpp
-
-    platform/android/acpland.cpp
-
-    platform/ios/acplios.cpp
-
-    platform/emscripten/acpemscripten.cpp
-
-    platform/bsd/acplbsd.cpp
-
     platform/windows/win_ex_handling.cpp
     platform/windows/win_ex_handling.h
-    platform/windows/minidump.cpp
-    platform/windows/winapi_exclusive.h
+
+    platform/linux/acpllnx.cpp
+    platform/osx/acplmac.cpp
+    platform/android/acpland.cpp
+    platform/ios/acplios.cpp
+    platform/emscripten/acpemscripten.cpp
+    platform/bsd/acplbsd.cpp
 
     platform/base/mobile_base.cpp
     platform/base/mobile_base.h
 )
-
-if(ANDROID)
-    target_sources(engine PRIVATE
-        platform/android/helper/jni_helper.cpp)
-endif()
-
-if(MACOS)
-    target_sources(engine PRIVATE 
-        platform/osx/alplmac.mm
-    )
-endif()
-
-if (AGS_BUILTIN_PLUGINS)
-    target_compile_definitions(engine PRIVATE BUILTIN_PLUGINS)
-
-    target_sources(engine PRIVATE 
-        ../Plugins/agsblend/agsblend/AGSBlend.cpp
-        ../Plugins/agsblend/agsblend/agsblend.h
-
-        ../Plugins/agsflashlight/agsflashlight/agsflashlight.cpp
-        ../Plugins/agsflashlight/agsflashlight/agsflashlight.h
-
-        ../Plugins/ags_parallax/ags_parallax/ags_parallax.cpp
-        ../Plugins/ags_parallax/ags_parallax/ags_parallax.h
-
-        ../Plugins/ags_snowrain/ags_snowrain/ags_snowrain.cpp
-        ../Plugins/ags_snowrain/ags_snowrain/ags_snowrain.h
-
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/AGSSpriteFont.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/AGSSpriteFont.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/CharacterEntry.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/CharacterEntry.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFont.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFont.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRenderer.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRenderer.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRendererClifftopGames.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/SpriteFontRendererClifftopGames.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthFont.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthFont.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/color.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/color.h
-
-        ../Plugins/agstouch/agstouch/agstouch.cpp
-        ../Plugins/agstouch/agstouch/agstouch.h
-
-        ../Plugins/agspalrender/agspalrender/palrender.h
-        ../Plugins/agspalrender/agspalrender/ags_palrender.cpp
-        ../Plugins/agspalrender/agspalrender/raycast.cpp
-        ../Plugins/agspalrender/agspalrender/raycast.h
-    )
-endif()
-
-if (AGS_BUILD_STR)
-    target_compile_definitions(engine PUBLIC BUILD_STR=\"${AGS_BUILD_STR}\")
-endif()
-
-
-target_link_libraries(engine PUBLIC 
-    AGS::Common 
-    ${CMAKE_DL_LIBS} 
-    Allegro::Allegro 
-    Cda::Cda
-    External::OpenAL
-    ${SDL2_LIBRARY}
-    SDL2_sound::SDL2_sound
-)
-
-if(NOT AGS_DISABLE_THREADS)
-    target_link_libraries(engine PUBLIC Threads::Threads)
-endif()
-
-if (AGS_OPENGLES2)
-    target_link_libraries(engine PUBLIC EGL GLESv2 Glad::GladGLES2)
-else()
-    target_link_libraries(engine PUBLIC Glad::Glad)
-endif (AGS_OPENGLES2)
-
-# common has a circular dependency on engine
-# TODO: currently required for gcc support, will look into this.
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-target_link_libraries(common PUBLIC engine)
-endif ()
-
-if (WIN32 OR LINUX)
-    target_compile_definitions(engine PRIVATE AGS_HAS_CD_AUDIO)
-endif ()
-
-if (AGS_NO_VIDEO_PLAYER)
-    target_compile_definitions(engine PRIVATE AGS_NO_VIDEO_PLAYER)
-else()
-    target_link_libraries(engine PUBLIC Apeg::Apeg)
-endif()
-
-if (WIN32)
-    target_link_libraries(engine PUBLIC shlwapi)
-endif()
-
-if(ANDROID)
-    find_library(ANDROID_LOG_LIB log)
-    target_link_libraries(engine PUBLIC ${ANDROID_LOG_LIB})
-endif()
-
-get_target_property(ENGINE_SOURCES engine SOURCES)
-# Set ROOT to parent directory to include Plugins/
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/.. PREFIX "Source Files" FILES ${ENGINE_SOURCES})
-
-# Standalone exe
-# -----------------------------------------------------------------------------
-if (NOT ANDROID)
-    add_executable(ags)
-else ()
-    add_library(ags SHARED)
-endif (NOT ANDROID)
-
-if (AGS_DESKTOP)
-    install(TARGETS ags RUNTIME DESTINATION bin)
-endif ()
-
-set_target_properties(ags PROPERTIES
-    CXX_STANDARD 11
-    CXX_EXTENSIONS NO
-)
-
-target_include_directories(ags PRIVATE .)
-
-target_sources(ags
-    PRIVATE
-    main/main_sdl2.cpp
-)
-
-target_link_libraries(ags PRIVATE engine ${SDL2MAIN_LIBRARY})
-
-if (LINUX)
-    # We may override `allegro_icon` and `load_midi_pf` depending on the version
-    target_link_options(ags PRIVATE -Wl,--allow-multiple-definition)
-endif ()
-
-set_target_properties(ags PROPERTIES
-    RUNTIME_OUTPUT_NAME ags
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-
-if (WIN32)
-    target_sources(ags PRIVATE resource/version.rc) # for setup dialog and d3d shaders
-    set_target_properties(ags PROPERTIES
-        WIN32_EXECUTABLE TRUE
-    )
-    if (CMAKE_SIZEOF_VOID_P EQUAL 4)
-        # enable more than 2 GB in a 32-bit application
-        if (MINGW)
-            target_link_options(ags PUBLIC "-Wl,--large-address-aware")
-        endif ()
-        if (MSVC)
-            target_link_options(ags PUBLIC "/LARGEADDRESSAWARE")
-        endif ()
-    endif ()
-endif()
-
-# Test
-# -----------------------------------------------------------------------------
-if(AGS_TESTS)
-    add_executable(
-        engine_test
-        test/scsprintf_test.cpp
-        test/systemimports_test.cpp
-    )
-    set_target_properties(engine_test PROPERTIES
-        CXX_STANDARD 11
-        CXX_EXTENSIONS NO
-        C_STANDARD 11
-        C_EXTENSIONS NO
-        INTERPROCEDURAL_OPTIMIZATION FALSE
-        )
-    target_link_libraries(
-        engine_test
-        engine
-        common
-        gtest_main
-    )
-    if(AGS_USE_LOCAL_GTEST)
-        target_link_libraries(engine_test gtest)
-    endif()
-
-    include(GoogleTest)
-    gtest_add_tests(TARGET engine_test)
-endif()
-
-# macOS App Bundle
-# -----------------------------------------------------------------------------
-
-if (MACOS)
-    add_executable(ags-app)
-
-    set_target_properties(ags-app PROPERTIES
-        CXX_STANDARD 11
-        CXX_EXTENSIONS NO
-    )
-
-    target_include_directories(ags-app PRIVATE .)
-
-    file(GLOB RESOURCE_FILES
-        CONFIGURE_DEPENDS
-        ../OSX/Resources/ags.icns
-        ../OSX/Resources/*.ags
-        ../OSX/Resources/acsetup.cfg
-        ../OSX/Resources/audio.vox
-        ../OSX/Resources/music.vox
-        ../OSX/Resources/speech.vox
-        ../OSX/Resources/*.vox
-        ../OSX/Resources/PrivacyInfo.xcprivacy
-    )
-
-    target_sources(ags-app
-        PRIVATE
-        main/main_sdl2.cpp
-        ${RESOURCE_FILES}
-    )
-
-    target_link_libraries(ags-app PRIVATE engine SDL2::SDL2main)
-
-    set_target_properties(ags-app PROPERTIES
-        RUNTIME_OUTPUT_NAME AGS
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-        MACOSX_BUNDLE TRUE
-        RESOURCE "${RESOURCE_FILES}"  # *must* be part of target sources too
-
-        # Below properties will configure the default template MacOSXBundleInfo.plist.in
-        # Refer to https://cmake.org/cmake/help/latest/prop_tgt/MACOSX_BUNDLE_INFO_PLIST.html
-        # if you want to manage a custom plist template file.
-
-        MACOSX_BUNDLE_GUI_IDENTIFIER        # CFBundleIdentifier
-            uk.co.adventuregamestudio.ags
-        MACOSX_BUNDLE_BUNDLE_NAME           # CFBundleName
-            AGS
-        MACOSX_BUNDLE_ICON_FILE             # CFBundleIconFile
-            ags.icns
-        MACOSX_BUNDLE_BUNDLE_VERSION        # CFBundleVersion
-            1.0.0
-        MACOSX_BUNDLE_LONG_VERSION_STRING   # CFBundleLongVersionString
-            1.0.0
-        MACOSX_BUNDLE_SHORT_VERSION_STRING  # CFBundleShortVersionString
-            1.0.0
-        MACOSX_BUNDLE_COPYRIGHT             # NSHumanReadableCopyright
-            "Copyright (C) 1999-2011 Chris Jones and 2011-2026 others"
-        MACOSX_BUNDLE_INFO_STRING           # CFBundleGetInfoString
-            "Created by Adventure Game Studio"
-    )
-endif()
