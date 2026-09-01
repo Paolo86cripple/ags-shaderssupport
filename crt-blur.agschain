@@ -1,0 +1,3 @@
+# AGS shader chain v1
+pass=blur-pass.glsl
+pass=crt-simple.glsl

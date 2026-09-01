@@ -1,114 +1,200 @@
-<p align=center>
-  <img src="https://avatars.githubusercontent.com/u/1833326" width=96></br>
-  <a target="_blank" href="https://github.com/adventuregamestudio/ags/actions/workflows/build.yml" title="Build Status"><img src="https://github.com/adventuregamestudio/ags/actions/workflows/build.yml/badge.svg"></a>
-</p>
-  
-# Adventure Game Studio
+# AGS native GLSL runtime-only shader support — phase 1
 
-Adventure Game Studio (AGS) - is the IDE and the engine meant for creating and running videogames of adventure (aka "quest") genre. Created by Chris Jones back in 1999, AGS was open-sourced in 2011. Since then continues to be developed by contributors. Both Editor and Engine are licensed under the Artistic License 2.0; for more details see [License.txt](License.txt). 
+Target: `Paolo86cripple/ags-shaderssupport`.
 
-For community forums, games and more, go to the website: [www.adventuregamestudio.co.uk](https://www.adventuregamestudio.co.uk)
+This is deliberately a **runtime-only** feature. No AGS Editor changes are
+needed and the shipped AGS game data does not need to be modified.
 
-The latest stable version of AGS Editor may be found here: [https://www.adventuregamestudio.co.uk/site/ags/](https://www.adventuregamestudio.co.uk/site/ags/)
+## Files to add
 
-For the full list of releases, both stable, betas and others, see our repository's [Releases page](https://github.com/adventuregamestudio/ags/releases).
+Copy these two files into the AGS source tree:
 
-Please be aware that, unlike the runtime engine, AGS Editor is only supported on MS Windows (and Windows emulators such as WINE).
+- `Engine/gfx/ags_shader_pipeline.h`
+- `Engine/gfx/ags_shader_pipeline.cpp`
 
+The files under `shaders/` are sample external shaders and can remain anywhere
+on disk; they are not required to be compiled into the runtime.
 
-## Branches and releases
+## Runtime wiring
 
-The [`master`][master-br] branch is where the next planned version is being developed. It may temporarily contain unstable or untested code.
+### `Engine/ac/gamesetup.h`
 
-Currently, `master` corresponds to 3.\* generation of the engine/IDE and maintains backward compatibility with previous releases - see also [Compatibility](#ags-game-compatibility). According to current plans, this branch should only receive improvements to the backend, system support, and performance. Changes to data formats and game script should be kept to a strict minimum necessary to fill in the critical gaps in the engine's functionality.
+Inside `GameConfig`, next to the existing graphics fields, add:
 
-There's an [`ags4`][ags4-br] branch also active where we develop a future version AGS 4.0. There we introduce greater changes and cut much of the old version support.
+```cpp
+String  ShaderPath;
+```
 
-According to our plans, in the future `master` branch will be merged with `ags4`, while the backward compatible generation will remain as the `ags3` branch and only receive fixes and minor enhancements. But there's still some work to do in AGS 3.\*, so the exact moment that happens is unknown.
+### `Engine/main/config.cpp`
 
-For "official" releases we create `release-X.X.X` branches, that is to prepare the code for the final release and continue making patches to that release if a need arises. 
+In the graphics configuration read section, after the existing
+`software_driver` read, add:
 
-Because of the low number of active developers we tend to only update the one latest release branch. If bugs are found in one of the older versions, then we advise you to update to the latest version first.
+```cpp
+setup.ShaderPath = CfgReadString(cfg, "graphics", "shader");
+```
 
-Please note that while the `master` branch may contain changes to game data format and new script functions, we cannot guarantee that these will remain unchanged until the actual release. We only support data formats and script APIs that are in published releases. For that reason, it's best to use one of the actual releases if you'd like to make your own game with this tool.
+### `Engine/main/main.cpp`
 
-There may be other temporary development branches meant for preparing and testing large changes, but these are situational.
+Next to the existing `--gfxfilter` command-line handling, add:
 
-## Building and running
+```cpp
+else if ((ags_stricmp(arg, "--shader") == 0) && (argc > ee + 1))
+{
+    cfg["graphics"]["shader"] = argv[++ee];
+}
+```
 
-To get started building the AGS engine, see the platform-specific instructions or forum threads:
+### `Engine/gfx/ali3dogl.h`
 
-- [CMAKE](CMAKE.md) - this readme covers the centralized build system using CMake
-- [Android](Android/README.md) ([Forum thread](https://www.adventuregamestudio.co.uk/forums/index.php?topic=59751.0))
-- [iOS](iOS/README.md) ([Forum thread](https://www.adventuregamestudio.co.uk/forums/index.php?topic=46040.0))
-- [Linux](debian/README.md) ([Forum thread](https://www.adventuregamestudio.co.uk/forums/index.php?topic=59750.0))
-- [Mac OS X](OSX/README.md) ([Forum thread](https://www.adventuregamestudio.co.uk/forums/index.php?topic=47264.0))
-- [Windows](Windows/README.md)
-- [Emscripten Web port](Emscripten/README.md) ([Forum thread](https://www.adventuregamestudio.co.uk/forums/index.php?topic=59164.0))
+Add:
 
-No longer actively supported, but may work with older code revisions:
--    [PSP](PSP/README.md) ([Forum thread](https://www.adventuregamestudio.co.uk/forums/index.php?topic=43998.0))
+```cpp
+#include "gfx/ags_shader_pipeline.h"
+```
 
-On desktop systems launching a game is done by either placing an engine executable in the same directory where the game data is and starting the engine up or passing game location as a command-line argument.
+In the private section of `OGLGraphicsDriver`, add:
 
-For Android, we have a game launcher app that may run any game, but it's also possible to make a signed APK for your own game (see instructions linked above).
+```cpp
+void ApplyShaderPipeline();
+std::unique_ptr<AGSShaderPipeline> _shaderPipeline;
+```
 
-Game configuration is usually found in the `acsetup.cfg` file. On Windows you may also invoke a setup dialog by running the engine with `--setup` argument.
+### `Engine/gfx/ali3dogl.cpp`
 
-For the list of available config options and command-line arguments, please refer to [OPTIONS.md](OPTIONS.md).
+Add:
 
-AGS Editor is currently only supported on Windows, although it may be run using Wine on Linux and OSX.
+```cpp
+#include "ac/gamesetup.h"
+#include "gfx/ags_shader_pipeline.h"
+```
 
+At the end of `FirstTimeInit()`, after the existing built-in shader creation:
 
-## AGS game compatibility
+```cpp
+_shaderPipeline.reset(new AGSShaderPipeline());
 
-This repository now holds two generations of AGS, referred to as "AGS 3" and "AGS 4".
+if (!usetup.ShaderPath.IsEmpty())
+{
+    String shader_error;
+    if (!_shaderPipeline->Load(usetup.ShaderPath, shader_error))
+    {
+        Debug::Printf(kDbgMsg_Error,
+            "AGS shader pipeline: %s", shader_error.GetCStr());
+        _shaderPipeline->Clear();
+    }
+}
+```
 
-**The 3rd generation** of AGS may be currently found in the `master` branch (also `ags3`). Its specifics are:
+Add this method:
 
-- Supports (imports into the editor and runs by the engine) all versions of AGS games made with AGS 2.50 and up. Note that there may still be compatibility issues with very old games that were not uncovered and fixed yet.
+```cpp
+void OGLGraphicsDriver::ApplyShaderPipeline()
+{
+    if (!_shaderPipeline || !_shaderPipeline->IsLoaded() || !_nativeSurface)
+        return;
 
-- If you try to run an unsupported game, you will receive an error message reporting the original version of AGS it was made in and data format index, which may be used for reference e.g. when reporting the problem.
+    OGLTexture *texture = _nativeSurface->GetTexture();
+    if (!texture || texture->_numTiles != 1)
+    {
+        Debug::Printf(kDbgMsg_Warn,
+            "AGS shader pipeline disabled: native surface uses multiple texture tiles.");
+        return;
+    }
 
-- Game saves are compatible between the different platforms if they are created with the same version of the engine. Latest 3.\* engine should normally read saves made by engine 3.2.0 and above, but that has not been tested for a while.
+    _shaderPipeline->Apply(
+        texture->_tiles[0].texture,
+        _nativeSurface->GetSize(),
+        _screenBackbuffer.Fbo,
+        _screenBackbuffer.SurfSize,
+        _screenBackbuffer.Viewport);
+}
+```
 
-- Certain games may require engine plugins. If there's no plugin version for a particular platform or a platform-independent replacement, then the game will not load on that platform.
+Replace the start of `RenderImpl()` so an active shader forces native rendering
+to the FBO and then post-processes it:
 
-- As of AGS 3.6.0 the Windows engine no longer supports playing **AVI/MPG videos**. The decision to drop this feature was made while moving to a new SDL2 backend, primarily because its implementation was based on using DirectShow interface (Windows-only) and relied on codecs installed on player's system. Other ports were not supporting this ever. If the game tries to play such video, it will simply be skipped. The existing workaround is to convert the avi/mpg video file to OGV, while keeping the full original filename (*including the extension!*): then this file will be instead opened by the integrated OGV player.
+```cpp
+void OGLGraphicsDriver::RenderImpl(bool clearDrawListAfterwards)
+{
+    if (_shaderPipeline && _shaderPipeline->IsLoaded() && _nativeSurface)
+    {
+        const bool old_render_to_texture = _doRenderToTexture;
+        _doRenderToTexture = true;
 
-**The 4th generation** is found in [`ags4`][ags4-br] branch. It formally supports importing games made with AGS 3.4.1 and above, but only if these do not use any legacy features. The 4.x engine should be able to read saves made with the 3.5.0 engine and above.
+        RenderToSurface(&_nativeBackbuffer, clearDrawListAfterwards);
 
+        _doRenderToTexture = old_render_to_texture;
+        ApplyShaderPipeline();
+        glFinish();
+        return;
+    }
 
-## Other repositories
+    // Keep the existing AGS implementation below this block unchanged.
+    ...
+}
+```
 
-There are other repositories which contain additional resources and may be of interest to you:
+In `UnInit()`, before destroying the OpenGL context:
 
-- [ags-manual](https://github.com/adventuregamestudio/ags-manual) - holds AGS documentation.
+```cpp
+_shaderPipeline.reset();
+```
 
-- [ags-templates](https://github.com/adventuregamestudio/ags-templates) - this is where compiled game templates are uploaded in preparation for the Editor's release.
+### `Engine/CMakeLists.txt`
 
-- [ags-template-source](https://github.com/adventuregamestudio/ags-template-source) - this is where template sources are developed - these are essentially AGS game projects.
+Add to `target_sources(engine PRIVATE ...)`:
 
+```cmake
+gfx/ags_shader_pipeline.cpp
+gfx/ags_shader_pipeline.h
+```
 
-## Contributing
+## Usage
 
-If you would like to contribute to the project, please read the [CONTRIBUTING.md](CONTRIBUTING.md). Below is a brief summary of the process.
+Single pass:
 
-* For the bug fixes or minor code improvements, you need only create a fork of the repository, commit your changes to a branch, and submit a pull request. We will review your commits and may ask you to make alterations to your code if needed before merging it into our repository.
+```bash
+ags --gfxdriver ogl --shader /path/to/shader.glsl game.exe
+```
 
-* For new features or other larger contributions, please first open an issue in the [Issue Tracker](https://github.com/adventuregamestudio/ags/issues). There we can discuss the proposed changes with the development team to ensure that they will be consistent with existing program behavior and future development plans.
+Multipass:
 
-We may also accept patch files if you send them to one of the project maintainers.
+```bash
+ags --gfxdriver ogl --shader /path/to/crt-blur.agschain game.exe
+```
 
-## Changes from Chris Jones' version of AGS
+Example chain:
 
-This version of AGS contains changes from the version published by Chris Jones. The run-time engine was ported to Android, iOS, Linux, Mac OS X, and PSP and a refactoring effort is underway. Detailed documentation of the changes is provided in the form of the git log of this git repository ([github.com/adventuregamestudio/ags](https://github.com/adventuregamestudio/ags)).
+```text
+pass=blur-pass.glsl
+pass=crt-simple.glsl
+```
 
+Shader paths inside a chain are relative to the `.agschain` file.
 
-## Credits
+## Shader interface
 
-[Link](Copyright.txt)
+The fragment shader can use:
 
-[master-br]: https://github.com/adventuregamestudio/ags/tree/master
-[ags4-br]: https://github.com/adventuregamestudio/ags/tree/ags4
+```glsl
+uniform sampler2D uTexture;
+uniform vec2 uInputSize;
+uniform vec2 uOutputSize;
+uniform vec2 uOriginalSize;
+uniform vec2 uTexelSize;
+uniform float uTime;
+uniform float uFrameCount;
+```
 
+The pipeline uses the AGS runtime's existing OpenGL context (currently
+OpenGL 2.1 / GLSL 1.20), rather than introducing a new renderer.
+
+## Deliberate phase-1 limitations
+
+- GLSL only; no HLSL/SPIR-V yet.
+- Intermediate passes use the final output resolution.
+- The native AGS surface must be represented by one GL texture tile.
+- No RetroArch/libretro dependency.
+- No Editor integration.
+- No changes to the shipped game data are required when using `--shader`.
