@@ -11,7 +11,7 @@ find_package(OpenGL REQUIRED)
 
 add_library(ags-shader SHARED
     src/preload.cpp
-    src/shader_pipeline.cpp
+    src/shader_pipeline_v2.cpp
 )
 
 target_include_directories(ags-shader PRIVATE src)
