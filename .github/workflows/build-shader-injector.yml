@@ -1,0 +1,49 @@
+name: Build AGS Shader Injector
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'injector/**'
+      - '.github/workflows/build-shader-injector.yml'
+  pull_request:
+    paths:
+      - 'injector/**'
+      - '.github/workflows/build-shader-injector.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ pkg-config libsdl2-dev libgl1-mesa-dev
+
+      - name: Configure
+        run: cmake -S injector -B build/injector -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/injector --config Release --parallel
+
+      - name: Package per-game add-on
+        run: |
+          mkdir -p dist/ags-shader
+          cp build/injector/libags-shader.so dist/ags-shader/
+          cp injector/run-with-shader.sh dist/ags-shader/
+          cp injector/README.md dist/ags-shader/
+          tar -C dist -czf ags-shader-linux-x86_64.tar.gz ags-shader
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ags-shader-linux-x86_64
+          path: ags-shader-linux-x86_64.tar.gz
