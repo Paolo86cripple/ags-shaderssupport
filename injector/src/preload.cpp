@@ -1,4 +1,4 @@
-#include "shader_pipeline.h"
+#include "shader_pipeline_v2.h"
 
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
@@ -15,7 +15,7 @@ using SwapWindowFn = void (*)(SDL_Window *);
 
 SwapWindowFn g_real_swap = nullptr;
 thread_local bool g_in_swap = false;
-ShaderPipeline g_pipeline;
+ShaderPipelineV2 g_pipeline;
 GLuint g_capture_texture = 0u;
 int g_capture_width = 0;
 int g_capture_height = 0;
@@ -110,8 +110,6 @@ extern "C" void SDL_GL_SwapWindow(SDL_Window *window)
 
         if (width > 0 && height > 0 && EnsureCaptureTexture(width, height))
         {
-            // AGS ends its frame on the default framebuffer. Capture that
-            // framebuffer before replacing it with the shader result.
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, g_capture_texture);
             glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
