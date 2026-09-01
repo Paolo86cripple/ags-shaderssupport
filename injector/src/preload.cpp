@@ -1,6 +1,7 @@
 #include "shader_pipeline_v2.h"
-#include <SDL2/SDL.h>
+
 #include <GL/gl.h>
+#include <SDL2/SDL.h>
 #include <dlfcn.h>
 
 #include <cstdarg>
@@ -35,7 +36,8 @@ void DebugLog(const char *format, ...)
 void ResolveRealSwap()
 {
     if (!g_real_swap)
-        g_real_swap = reinterpret_cast<SwapWindowFn>(dlsym(RTLD_NEXT, "SDL_GL_SwapWindow"));
+        g_real_swap = reinterpret_cast<SwapWindowFn>(
+            dlsym(RTLD_NEXT, "SDL_GL_SwapWindow"));
 }
 
 bool EnsureCaptureTexture(int width, int height)
@@ -54,7 +56,7 @@ bool EnsureCaptureTexture(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     g_capture_width = width;
@@ -70,15 +72,19 @@ void InitializePipeline()
 
     const char *shader_path = std::getenv("AGS_SHADER_CHAIN");
     if (!shader_path || shader_path[0] == '\0')
+        shader_path = std::getenv("AGS_SHADER");
+
+    if (!shader_path || shader_path[0] == '\0')
     {
-        DebugLog("AGS shader: AGS_SHADER_CHAIN is not set");
+        DebugLog("AGS shader: AGS_SHADER_CHAIN/AGS_SHADER is not set");
         return;
     }
 
     std::string error;
     if (!g_pipeline.load(shader_path, error))
     {
-        DebugLog("AGS shader: failed to load '%s': %s", shader_path, error.c_str());
+        DebugLog("AGS shader: failed to load '%s': %s",
+                 shader_path, error.c_str());
         return;
     }
 
@@ -109,29 +115,22 @@ extern "C" void SDL_GL_SwapWindow(SDL_Window *window)
 
         if (width > 0 && height > 0 && EnsureCaptureTexture(width, height))
         {
+            GLint old_read_buffer = GL_BACK;
+            glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glReadBuffer(GL_BACK);
+
             glBindTexture(GL_TEXTURE_2D, g_capture_texture);
-            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+                                0, 0, width, height);
             glBindTexture(GL_TEXTURE_2D, 0);
 
-            // AGS uses VBOs in its normal renderer. Our fullscreen quad uses
-            // client-side vertex arrays on the compatibility profile, so isolate
-            // the shader pass from the currently bound array buffer.
-            GLint old_array_buffer = 0;
-            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-            const GLenum copy_error = glGetError();
-            if (copy_error != GL_NO_ERROR)
-                DebugLog("AGS shader: OpenGL error after capture: 0x%x", copy_error);
-
+            log_gl_error("framebuffer capture");
             g_pipeline.apply(g_capture_texture, width, height, width, height);
+            log_gl_error("post-processing");
 
-            const GLenum shader_error = glGetError();
-            if (shader_error != GL_NO_ERROR)
-                DebugLog("AGS shader: OpenGL error after pipeline: 0x%x", shader_error);
-
-            glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(old_array_buffer));
+            glReadBuffer(static_cast<GLenum>(old_read_buffer));
         }
     }
 
