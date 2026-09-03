@@ -4,6 +4,7 @@
 class ShaderPipelineV3 {
 public:
     enum class ScaleType { Source, Viewport, Absolute };
+    enum class WrapMode { ClampToBorder, ClampToEdge, Repeat, MirroredRepeat };
     ~ShaderPipelineV3();
     bool load(const std::string &path, std::string &error);
     bool loaded() const { return !_passes.empty(); }
@@ -17,14 +18,18 @@ private:
         int prev_texture[MaxPrevPasses];
         int prev_texture_size[MaxPrevPasses];
         bool filter_linear=true;
+        bool float_framebuffer=false;
+        bool srgb_framebuffer=false;
+        WrapMode wrap_mode=WrapMode::ClampToBorder;
         ScaleType scale_type_x=ScaleType::Source,scale_type_y=ScaleType::Source;
         float scale_x=1.f,scale_y=1.f;
         std::string source_path;
+        std::string alias;
         Pass() {
             for (int i=0;i<MaxPrevPasses;++i) { prev_texture[i]=-1; prev_texture_size[i]=-1; }
         }
     };
-    struct Target { unsigned fbo=0,texture=0; int width=0,height=0; };
+    struct Target { unsigned fbo=0,texture=0; int width=0,height=0,format=0; };
     std::vector<Pass> _passes;
     std::vector<Target> _targets;
     unsigned long long _frame_count=0;
@@ -35,7 +40,7 @@ private:
     bool parse_chain(const std::string&,std::vector<std::string>&,std::string&) const;
     bool parse_glslp(const std::string&,std::vector<Pass>&,std::string&) const;
     bool ensure_fbo_functions(std::string&);
-    bool ensure_target(Target&,int,int,bool,std::string&);
+    bool ensure_target(Target&,int,int,bool,bool,std::string&);
     void destroy_target(Target&);
     static bool parse_bool(const std::string &s, bool d) {
         if (s == "1" || s == "true" || s == "TRUE") return true;
