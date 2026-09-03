@@ -20,7 +20,7 @@ private:
         bool filter_linear=true;
         bool float_framebuffer=false;
         bool srgb_framebuffer=false;
-        WrapMode wrap_mode=WrapMode::ClampToBorder;
+        WrapMode wrap_mode=WrapMode::ClampToEdge;
         ScaleType scale_type_x=ScaleType::Source,scale_type_y=ScaleType::Source;
         float scale_x=1.f,scale_y=1.f;
         std::string source_path;
