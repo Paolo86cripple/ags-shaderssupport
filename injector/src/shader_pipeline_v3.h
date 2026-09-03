@@ -22,5 +22,4 @@ private:
     bool ensure_fbo_functions(std::string&);
     bool ensure_target(Target&,int,int,bool,std::string&);
     void destroy_target(Target&);
-    static std::string trim(std::string); static std::string lower(std::string); static std::string unquote(std::string); static std::string parent_dir(const std::string&); static std::string join_path(const std::string&,const std::string&); static bool has_suffix(const std::string&,const char*); static bool parse_bool(const std::string&,bool); static int parse_int(const std::string&,int); static float parse_float(const std::string&,float); static ScaleType parse_scale_type(const std::string&); static int resolve_dimension(ScaleType,float,int,int);
 };
