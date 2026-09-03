@@ -304,6 +304,8 @@ target_sources(engine
     gfx/ali3dogl.h
     gfx/ali3dsw.cpp
     gfx/ali3dsw.h
+    gfx/ags_shader_pipeline.cpp
+    gfx/ags_shader_pipeline.h
     gfx/blender.cpp
     gfx/blender.h
     gfx/ddb.h
@@ -516,8 +518,8 @@ if (AGS_BUILTIN_PLUGINS)
         ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthFont.h
         ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.cpp
         ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFont.h
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontRendererClifftopGames.cpp
-        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontRendererClifftopGames.h
+        ../Plugins/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.cpp
+        ../Plugins/AGSSpriteFont/AGSSpriteFont/VariableWidthSpriteFontClifftopGames.h
         ../Plugins/AGSSpriteFont/AGSSpriteFont/color.cpp
         ../Plugins/AGSSpriteFont/AGSSpriteFont/color.h
 

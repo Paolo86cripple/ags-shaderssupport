@@ -31,6 +31,7 @@
 #include "util/version.h"
 
 #include "ogl_headers.h"
+#include "gfx/ags_shader_pipeline.h"
 
 namespace AGS
 {
@@ -497,6 +498,8 @@ private:
     BackbufferState _screenBackbuffer;
     BackbufferState _nativeBackbuffer;
     BackbufferState *_currentBackbuffer = nullptr;
+
+    AGSShaderPipeline _shaderPipeline;
 
     // Sprite batches (parent scene nodes)
     OGLSpriteBatches _spriteBatches;

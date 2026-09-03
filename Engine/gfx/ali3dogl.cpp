@@ -225,6 +225,20 @@ bool OGLGraphicsDriver::FirstTimeInit()
         return false;
     }
 
+    // Development bootstrap for the native Libretro-compatible shader pipeline.
+    // The launcher will eventually provide this path via the game's profile.
+    const char *shader_path = std::getenv("AGS_SHADER_CHAIN");
+    if (!shader_path || shader_path[0] == '\0')
+        shader_path = std::getenv("AGS_SHADER");
+    if (shader_path && shader_path[0] != '\0')
+    {
+        std::string shader_error;
+        if (!_shaderPipeline.Load(shader_path, shader_error))
+            Debug::Printf(kDbgMsg_Warn, "OGL: shader load failed: %s", shader_error.c_str());
+        else
+            Debug::Printf(kDbgMsg_Info, "OGL: loaded shader pipeline: %s", shader_path);
+    }
+
     _firstTimeInit = true;
     return true;
 }
@@ -852,6 +866,9 @@ void OGLGraphicsDriver::UnInit()
   DeleteShaderProgram(_tintShader);
   DeleteShaderProgram(_lightShader);
 
+  // Shader programs and FBOs belong to the active OpenGL context.
+  _shaderPipeline.Clear();
+
   DeleteWindowAndGlContext();
   sys_window_destroy();
 }
@@ -1168,6 +1185,14 @@ void OGLGraphicsDriver::RenderTexture(OGLBitmap *bmpToDraw, int draw_x, int draw
 void OGLGraphicsDriver::RenderAndPresent(bool clearDrawListAfterwards)
 {
     RenderImpl(clearDrawListAfterwards);
+
+    if (_shaderPipeline.IsLoaded())
+    {
+        const Size &surface = _screenBackbuffer.SurfSize;
+        _shaderPipeline.Apply(surface.Width, surface.Height,
+                              surface.Width, surface.Height);
+    }
+
     SDL_GL_SwapWindow(_sdlWindow);
 }
 
