@@ -30,10 +30,14 @@ CheckFbo pCheckFbo = nullptr;
 
 const char *kVertex =
     "#version 120\n"
-    "attribute vec2 aPosition;\n"
-    "attribute vec2 aTexCoord;\n"
+    "uniform mat4 MVPMatrix;\n"
+    "attribute vec4 VertexCoord;\n"
+    "attribute vec4 TexCoord;\n"
+    "attribute vec4 COLOR;\n"
+    "varying vec4 TEX0;\n"
+    "varying vec4 COL0;\n"
     "varying vec2 vTexCoord;\n"
-    "void main(){vTexCoord=aTexCoord;gl_Position=vec4(aPosition,0.0,1.0);}\n";
+    "void main(){TEX0=TexCoord;COL0=COLOR;vTexCoord=TexCoord.xy;gl_Position=MVPMatrix*VertexCoord;}\n";
 
 struct Vertex { float x, y, u, v; };
 const Vertex kQuad[4] = {
@@ -159,7 +163,11 @@ bool ShaderPipelineV3::create_program(const std::string &vs, const std::string &
     if (!compile_shader(GL_FRAGMENT_SHADER,fs,f,error)) { glDeleteShader(v); return false; }
     program=glCreateProgram(); if (!program) { glDeleteShader(v); glDeleteShader(f); error="glCreateProgram failed"; return false; }
     glAttachShader(program,v); glAttachShader(program,f);
-    glBindAttribLocation(program,0,"aPosition"); glBindAttribLocation(program,1,"aTexCoord");
+    glBindAttribLocation(program,0,"VertexCoord");
+    glBindAttribLocation(program,1,"TexCoord");
+    glBindAttribLocation(program,2,"COLOR");
+    glBindAttribLocation(program,0,"aPosition");
+    glBindAttribLocation(program,1,"aTexCoord");
     glLinkProgram(program); glDeleteShader(v); glDeleteShader(f);
     GLint ok=GL_FALSE; glGetProgramiv(program,GL_LINK_STATUS,&ok); if(ok==GL_TRUE) return true;
     GLint n=0; glGetProgramiv(program,GL_INFO_LOG_LENGTH,&n); std::vector<char> log(static_cast<size_t>(std::max(n,1))); if(n)glGetProgramInfoLog(program,n,nullptr,log.data());
@@ -172,11 +180,13 @@ bool ShaderPipelineV3::add_pass(const std::string &path, const Pass *preset, std
     std::string vs = combined_shader(source) ? combined_stage(source,"VERTEX") : std::string(kVertex);
     std::string fs = combined_shader(source) ? combined_stage(source,"FRAGMENT") : source;
     if(!create_program(vs,fs,pass.program,error)) return false;
-    pass.texture=glGetUniformLocation(pass.program,"uTexture"); if(pass.texture<0) pass.texture=glGetUniformLocation(pass.program,"Texture");
-    pass.input_size=glGetUniformLocation(pass.program,"uInputSize"); pass.texture_size=glGetUniformLocation(pass.program,"TextureSize");
-    pass.output_size=glGetUniformLocation(pass.program,"uOutputSize"); if(pass.output_size<0)pass.output_size=glGetUniformLocation(pass.program,"OutputSize");
-    pass.original_size=glGetUniformLocation(pass.program,"uOriginalSize"); pass.texel_size=glGetUniformLocation(pass.program,"uTexelSize");
-    pass.frame_count=glGetUniformLocation(pass.program,"uFrameCount"); if(pass.frame_count<0)pass.frame_count=glGetUniformLocation(pass.program,"FrameCount");
+    pass.texture=glGetUniformLocation(pass.program,"Texture"); if(pass.texture<0) pass.texture=glGetUniformLocation(pass.program,"uTexture");
+    pass.input_size=glGetUniformLocation(pass.program,"InputSize"); if(pass.input_size<0)pass.input_size=glGetUniformLocation(pass.program,"SourceSize"); if(pass.input_size<0)pass.input_size=glGetUniformLocation(pass.program,"uInputSize");
+    pass.texture_size=glGetUniformLocation(pass.program,"TextureSize");
+    pass.output_size=glGetUniformLocation(pass.program,"OutputSize"); if(pass.output_size<0)pass.output_size=glGetUniformLocation(pass.program,"uOutputSize");
+    pass.original_size=glGetUniformLocation(pass.program,"OriginalSize"); if(pass.original_size<0)pass.original_size=glGetUniformLocation(pass.program,"uOriginalSize");
+    pass.texel_size=glGetUniformLocation(pass.program,"uTexelSize");
+    pass.frame_count=glGetUniformLocation(pass.program,"FrameCount"); if(pass.frame_count<0)pass.frame_count=glGetUniformLocation(pass.program,"uFrameCount");
     pass.frame_direction=glGetUniformLocation(pass.program,"FrameDirection"); pass.time=glGetUniformLocation(pass.program,"uTime");
     _passes.push_back(pass); return true;
 }
@@ -231,7 +241,8 @@ void ShaderPipelineV3::apply(unsigned input_texture,int iw,int ih,int ow,int oh)
         if(last){if(pBindFbo)pBindFbo(GL_FRAMEBUFFER_EXT,(GLuint)old_fbo);}else{std::string e;if(!ensure_target(_targets[i&1],w,h,p.filter_linear,e)){std::fprintf(stderr,"AGS shader: %s\n",e.c_str());break;}pBindFbo(GL_FRAMEBUFFER_EXT,_targets[i&1].fbo);}
         glViewport(0,0,w,h);glUseProgram(p.program);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,tex);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,p.filter_linear?GL_LINEAR:GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,p.filter_linear?GL_LINEAR:GL_NEAREST);
         if(p.texture>=0)glUniform1i(p.texture,0);if(p.input_size>=0)glUniform2f(p.input_size,(float)sw,(float)sh);if(p.texture_size>=0)glUniform2f(p.texture_size,(float)sw,(float)sh);if(p.output_size>=0)glUniform2f(p.output_size,(float)w,(float)h);if(p.original_size>=0)glUniform2f(p.original_size,(float)iw,(float)ih);if(p.texel_size>=0)glUniform2f(p.texel_size,1.f/std::max(sw,1),1.f/std::max(sh,1));if(p.frame_count>=0)glUniform1i(p.frame_count,(GLint)_frame_count);if(p.frame_direction>=0)glUniform1i(p.frame_direction,1);if(p.time>=0)glUniform1f(p.time,(float)SDL_GetTicks()/1000.f);
-        glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),&kQuad[0].x);glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),&kQuad[0].u);glDrawArrays(GL_TRIANGLE_STRIP,0,4);glDisableVertexAttribArray(0);glDisableVertexAttribArray(1); if(!last){tex=_targets[i&1].texture;sw=w;sh=h;}
+        GLint mvp=glGetUniformLocation(p.program,"MVPMatrix");if(mvp>=0){const GLfloat identity[16]={1.f,0.f,0.f,0.f,0.f,1.f,0.f,0.f,0.f,0.f,1.f,0.f,0.f,0.f,0.f,1.f};glUniformMatrix4fv(mvp,1,GL_FALSE,identity);}
+        glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);glDisableVertexAttribArray(2);glVertexAttrib4f(2,1.f,1.f,1.f,1.f);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),&kQuad[0].x);glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),&kQuad[0].u);glDrawArrays(GL_TRIANGLE_STRIP,0,4);glDisableVertexAttribArray(0);glDisableVertexAttribArray(1); if(!last){tex=_targets[i&1].texture;sw=w;sh=h;}
     }
     glUseProgram(old_program);glBindBuffer(GL_ARRAY_BUFFER,old_array);glActiveTexture(old_active);glBindTexture(GL_TEXTURE_2D,old_tex);if(pBindFbo)pBindFbo(GL_FRAMEBUFFER_EXT,(GLuint)old_fbo);glViewport(old_view[0],old_view[1],old_view[2],old_view[3]);if(blend)glEnable(GL_BLEND);else glDisable(GL_BLEND);if(depth)glEnable(GL_DEPTH_TEST);else glDisable(GL_DEPTH_TEST);if(cull)glEnable(GL_CULL_FACE);else glDisable(GL_CULL_FACE);if(scissor)glEnable(GL_SCISSOR_TEST);else glDisable(GL_SCISSOR_TEST);++_frame_count;
 }
