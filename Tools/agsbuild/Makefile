@@ -33,11 +33,10 @@ COMMON_OBJS = \
 	../../Common/debug/debugmanager.cpp \
 	../../Common/util/bufferedstream.cpp \
 	../../Common/util/cmdlineopts.cpp \
-	../../Common/util/file.cpp \
 	../../Common/util/directory.cpp \
+	../../Common/util/file.cpp \
 	../../Common/util/filestream.cpp \
-	../../Common/util/ini_util.cpp \
-	../../Common/util/inifile.cpp \
+	../../Common/util/memorystream.cpp \
 	../../Common/util/path.cpp \
 	../../Common/util/stdio_compat.c \
 	../../Common/util/stream.cpp \
@@ -48,9 +47,7 @@ COMMON_OBJS = \
 	../../Common/util/textstreamwriter.cpp
 
 TOOL_OBJS = \
-	../../Tools/data/agfreader.cpp \
-	../../Tools/data/game_utils.cpp \
-	../../Tools/data/scriptgen.cpp
+	../../Tools/data/agfreader.cpp
 
 MINIMAL_ALLEGRO_OBJS = \
 	../../libsrc/allegro/src/allegro.c \
@@ -62,6 +59,8 @@ TINYXML2 = \
 	../../libsrc/tinyxml2/tinyxml2.cpp
 
 OBJS := main.cpp \
+	pipedprocess.cpp \
+	taskmanager.cpp \
 	$(COMMON_OBJS) \
 	$(TOOL_OBJS) \
 	$(MINIMAL_ALLEGRO_OBJS) \
@@ -75,16 +74,16 @@ DEPFILES = $(OBJS:.o=.d)
 
 .PHONY: printflags clean install uninstall rebuild
 
-all: printflags agfexport
+all: printflags agsbuild
 
-agfexport: $(OBJS) 
+agsbuild: $(OBJS) 
 	@echo "Linking..."
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBS)
 
 debug: CXXFLAGS += -UNDEBUG -D_DEBUG -Og -g -pg
 debug: CFLAGS   += -UNDEBUG -D_DEBUG -Og -g -pg
 debug: LDFLAGS  += -pg
-debug: printflags agfexport
+debug: printflags agsbuild
 
 -include $(DEPFILES)
 
@@ -106,11 +105,11 @@ rebuild: clean all
 
 clean:
 	@echo "Cleaning..."
-	$(CMD_PREFIX) rm -f agfexport $(OBJS) $(DEPFILES)
+	$(CMD_PREFIX) rm -f agsbuild $(OBJS) $(DEPFILES)
 
-install: agfexport
+install: agsbuild
 	mkdir -p $(PREFIX)/bin
-	cp agfexport $(PREFIX)/bin
+	cp agsbuild $(PREFIX)/bin
 
 uninstall:
-	rm -f $(PREFIX)/bin/agfexport
+	rm -f $(PREFIX)/bin/agsbuild
