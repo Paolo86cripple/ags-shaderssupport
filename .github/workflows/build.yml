@@ -25,12 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-        - { name: Win-mingw-x86_64, os: windows-2022,   sys: Windows, gfx: D3D9, artifact: 'ags-mingw-x86_64', shell: 'msys2 {0}', runbin: "./ags",      bindir: "",        cmakecmd: "cmake", msystem: mingw64, msys-env: mingw-w64-x86_64 }
-        - { name: Win-mingw-arm64,  os: windows-11-arm, sys: Windows, gfx: D3D9, artifact: 'ags-mingw-arm64',  shell: 'msys2 {0}', runbin: "./ags",      bindir: "",        cmakecmd: "cmake", msystem: clangarm64, msys-env: mingw-w64-clang-aarch64 }
-        - { name: Windows,              os: windows-2022,   sys: Windows, gfx: D3D9, artifact: 'ags-windows',      shell: cmd,         runbin: ".\\ags.exe", bindir: "Release", cmakecmd: "cmake" }
-        - { name: Ubuntu-x86_64,        os: ubuntu-latest,    sys: Ubuntu,  gfx: OGL,  artifact: 'ags-linux-x86_64', shell: sh,          runbin: "./ags",      bindir: "",        cmakecmd: "cmake" }
-        - { name: Ubuntu-Arm64,         os: ubuntu-22.04-arm, sys: Ubuntu,  gfx: OGL,  artifact: 'ags-linux-Arm64',  shell: sh,          runbin: "./ags",      bindir: "",        cmakecmd: "cmake" }
-        - { name: macOS,                os: macos-latest,     sys: macOS,   gfx: OGL,  artifact: 'ags-macos',        shell: sh,          runbin: "./ags",      bindir: "",        cmakecmd: "cmake" }
+        - { name: Win-mingw-x86_64, os: windows-2022, sys: Windows, gfx: D3D9, artifact: 'ags-mingw-x86_64', shell: 'msys2 {0}', runbin: "./ags", bindir: "", cmakecmd: "cmake", msystem: mingw64, msys-env: mingw-w64-x86_64 }
+        - { name: Win-mingw-arm64, os: windows-11-arm, sys: Windows, gfx: D3D9, artifact: 'ags-mingw-arm64', shell: 'msys2 {0}', runbin: "./ags", bindir: "", cmakecmd: "cmake", msystem: clangarm64, msys-env: mingw-w64-clang-aarch64 }
+        - { name: Windows, os: windows-2022, sys: Windows, gfx: D3D9, artifact: 'ags-windows', shell: cmd, runbin: ".\\ags.exe", bindir: "Release", cmakecmd: "cmake" }
+        - { name: Ubuntu-x86_64, os: ubuntu-latest, sys: Ubuntu, gfx: OGL, artifact: 'ags-linux-x86_64', shell: sh, runbin: "./ags", bindir: "", cmakecmd: "cmake" }
+        - { name: Ubuntu-Arm64, os: ubuntu-22.04-arm, sys: Ubuntu, gfx: OGL, artifact: 'ags-linux-Arm64', shell: sh, runbin: "./ags", bindir: "", cmakecmd: "cmake" }
+        - { name: macOS, os: macos-latest, sys: macOS, gfx: OGL, artifact: 'ags-macos', shell: sh, runbin: "./ags", bindir: "", cmakecmd: "cmake" }
 
     steps:
     - name: Set up MSYS2
@@ -74,7 +74,11 @@ jobs:
     - name: Configure CMake
       run: |
         cmake --version
-        ${{ matrix.platform.cmakecmd }} -S "${{github.workspace}}" -B "${{github.workspace}}/build" -DAGS_BUILD_TOOLS=1 -DAGS_TESTS=1 -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} ${{ matrix.platform.sys == 'Ubuntu' && '-DSDL_PIPEWIRE=OFF' || '' }}
+        if [ "${{ matrix.platform.sys }}" = "Ubuntu" ]; then
+          ${{ matrix.platform.cmakecmd }} -S "${{github.workspace}}" -B "${{github.workspace}}/build" -DAGS_BUILD_TOOLS=1 -DAGS_TESTS=1 -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DSDL_PIPEWIRE=OFF
+        else
+          ${{ matrix.platform.cmakecmd }} -S "${{github.workspace}}" -B "${{github.workspace}}/build" -DAGS_BUILD_TOOLS=1 -DAGS_TESTS=1 -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+        fi
 
     - name: Build
       run: cmake --build "${{github.workspace}}/build" --config ${{env.BUILD_TYPE}} --parallel 8
@@ -292,29 +296,19 @@ jobs:
           path: WinDevDependenciesVS.zip
           archive: false
 
-      - name: Build WinDevDependenciesVS archive
-        shell: cmd
-        run: |
-          pushd "C:\Lib\SDL_sound"
-          if exist build_x86 del /Q /S build_x86\* && rd /Q /S build_x86
-          if exist build_x64 del /Q /S build_x64\* && rd /Q /S build_x64
-          popd
-          tar -f WinDevDependenciesVS.zip -acv --strip-components 2 C:\Lib
-          dir WinDevDependenciesVS.zip
-
   windows-msvc-tests:
     name: Windows MSVC Tests
     runs-on: windows-2022
     needs: windows-deps
     timeout-minutes: 40
     env:
-      AGS_LIBOGG_LIB:        C:\Lib\Xiph\x86
-      AGS_LIBTHEORA_LIB:     C:\Lib\Xiph\x86
-      AGS_LIBVORBIS_LIB:     C:\Lib\Xiph\x86
-      AGS_SDL_INCLUDE:       C:\Lib\SDL2\include
-      AGS_SDL_LIB:           C:\Lib\SDL2\lib\x86
+      AGS_LIBOGG_LIB: C:\Lib\Xiph\x86
+      AGS_LIBTHEORA_LIB: C:\Lib\Xiph\x86
+      AGS_LIBVORBIS_LIB: C:\Lib\Xiph\x86
+      AGS_SDL_INCLUDE: C:\Lib\SDL2\include
+      AGS_SDL_LIB: C:\Lib\SDL2\lib\x86
       AGS_SDL_SOUND_INCLUDE: C:\Lib\SDL_sound\src
-      AGS_SDL_SOUND_LIB:     C:\Lib\SDL_sound\lib\x86
+      AGS_SDL_SOUND_LIB: C:\Lib\SDL_sound\lib\x86
     steps:
       - uses: actions/checkout@v6
         with:
@@ -387,13 +381,13 @@ jobs:
     needs: windows-deps
     timeout-minutes: 40
     env:
-      AGS_LIBOGG_LIB:        C:\Lib\Xiph\x86
-      AGS_LIBTHEORA_LIB:     C:\Lib\Xiph\x86
-      AGS_LIBVORBIS_LIB:     C:\Lib\Xiph\x86
-      AGS_SDL_INCLUDE:       C:\Lib\SDL2\include
-      AGS_SDL_LIB:           C:\Lib\SDL2\lib\x86
+      AGS_LIBOGG_LIB: C:\Lib\Xiph\x86
+      AGS_LIBTHEORA_LIB: C:\Lib\Xiph\x86
+      AGS_LIBVORBIS_LIB: C:\Lib\Xiph\x86
+      AGS_SDL_INCLUDE: C:\Lib\SDL2\include
+      AGS_SDL_LIB: C:\Lib\SDL2\lib\x86
       AGS_SDL_SOUND_INCLUDE: C:\Lib\SDL_sound\src
-      AGS_SDL_SOUND_LIB:     C:\Lib\SDL_sound\lib\x86
+      AGS_SDL_SOUND_LIB: C:\Lib\SDL_sound\lib\x86
     steps:
       - uses: actions/checkout@v6
         with:
@@ -475,8 +469,8 @@ jobs:
     needs: windows-deps
     timeout-minutes: 40
     env:
-      AGS_SDL_INCLUDE:       C:\Lib\SDL2\include
-      AGS_SDL_LIB:           C:\Lib\SDL2\lib\x86
+      AGS_SDL_INCLUDE: C:\Lib\SDL2\include
+      AGS_SDL_LIB: C:\Lib\SDL2\lib\x86
     steps:
       - uses: actions/checkout@v6
         with:
@@ -576,13 +570,13 @@ jobs:
     needs: windows-deps
     timeout-minutes: 40
     env:
-      AGS_LIBOGG_LIB:        C:\Lib\Xiph\x86
-      AGS_LIBTHEORA_LIB:     C:\Lib\Xiph\x86
-      AGS_LIBVORBIS_LIB:     C:\Lib\Xiph\x86
-      AGS_SDL_INCLUDE:       C:\Lib\SDL2\include
-      AGS_SDL_LIB:           C:\Lib\SDL2\lib\x86
+      AGS_LIBOGG_LIB: C:\Lib\Xiph\x86
+      AGS_LIBTHEORA_LIB: C:\Lib\Xiph\x86
+      AGS_LIBVORBIS_LIB: C:\Lib\Xiph\x86
+      AGS_SDL_INCLUDE: C:\Lib\SDL2\include
+      AGS_SDL_LIB: C:\Lib\SDL2\lib\x86
       AGS_SDL_SOUND_INCLUDE: C:\Lib\SDL_sound\src
-      AGS_SDL_SOUND_LIB:     C:\Lib\SDL_sound\lib\x86
+      AGS_SDL_SOUND_LIB: C:\Lib\SDL_sound\lib\x86
     steps:
       - uses: actions/checkout@v6
         with:
@@ -737,45 +731,30 @@ jobs:
     name: Linux (${{ matrix.platform.arch }}, ${{ matrix.platform.rpath && 'Tar.gz' || 'Deb PKG' }})
     runs-on: ${{ matrix.platform.os }}
     timeout-minutes: 90
-
     strategy:
       fail-fast: false
       matrix:
         platform:
-        - { arch: amd64, rpath: true,  os: ubuntu-latest }
-        - { arch: i386,  rpath: true,  os: ubuntu-latest }
+        - { arch: amd64, rpath: true, os: ubuntu-latest }
+        - { arch: i386, rpath: true, os: ubuntu-latest }
         - { arch: amd64, rpath: false, os: ubuntu-latest }
-        - { arch: i386,  rpath: false, os: ubuntu-latest }
-
+        - { arch: i386, rpath: false, os: ubuntu-latest }
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - name: Log in to GHCR
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run build inside container
         run: |
           TAG_NAME=${{ env.BASE_BRANCH }}-${{ matrix.platform.arch }}
           IMAGE="ghcr.io/${{ github.repository_owner }}/ags-linux-builder-image:$TAG_NAME"
-          if [ "${{matrix.platform.rpath}}" = "true" ]; then
-            PREFIX=lib
-          else
-            PREFIX=
-          fi
-
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            -e RPATH_PREFIX=$PREFIX \
-            "$IMAGE" \
-            bash debian/build.sh
-
+          if [ "${{matrix.platform.rpath}}" = "true" ]; then PREFIX=lib; else PREFIX=; fi
+          docker run --rm -v "$PWD:/workspace" -w /workspace -e RPATH_PREFIX=$PREFIX "$IMAGE" bash debian/build.sh
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -791,35 +770,30 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - name: Install bsdtar
         run: sudo apt-get update -y && sudo apt-get install -y libarchive-tools
-
       - name: Download amd64 data archive
         uses: actions/download-artifact@v8
         with:
           name: linux-deb-amd64-rpath
           path: /tmp/linux-amd64
-
       - name: Download i386 data archive
         uses: actions/download-artifact@v8
         with:
           name: linux-deb-i386-rpath
           path: /tmp/linux-i386
-
       - name: Assemble Linux bundle
         run: |
           set -e
           tmp=$(mktemp -d)
           mkdir -p $tmp/data
           bsdtar -f /tmp/linux-amd64/data_amd64.tar.gz -xvzC $tmp/data
-          bsdtar -f /tmp/linux-i386/data_i386.tar.gz   -xvzC $tmp/data
+          bsdtar -f /tmp/linux-i386/data_i386.tar.gz -xvzC $tmp/data
           cp -v debian/copyright $tmp/data/licenses/ags-copyright
           cp -v debian/ags+libraries/startgame $tmp/
           awk 'BEGIN { RS="" } !/make_ags/ { if (NR>1) print RS; print }' debian/ags+libraries/README > $tmp/README
           version=$(awk -F'[ \" ]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
           bsdtar -f ags_${version}_linux.tar.gz -cvzC $tmp data startgame README
-
       - uses: actions/upload-artifact@v7
         with:
           name: ags-bundle-linux
@@ -844,25 +818,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - name: Download Windows dependencies
         uses: actions/download-artifact@v8
         with:
           name: WinDevDependenciesVS.zip
           path: C:\Lib
-
       - name: Download Editor binaries
         uses: actions/download-artifact@v8
         with:
           name: windows-editor-binaries
           path: Windows\Installer\Source\Editor
-
       - name: Download Engine x86 binary
         uses: actions/download-artifact@v8
         with:
           name: windows-engine-binaries-x86
           path: Windows\Installer\Source\Engine_tmp
-
       - name: Copy vcredist, acwin.exe and SDL2.dll
         shell: cmd
         run: |
@@ -871,26 +841,22 @@ jobs:
           copy C:\Lib\VcRedist\vc_redist.x86.exe Windows\Installer\Source\Redist\vc_redist.x86.exe
           copy Windows\Installer\Source\Engine_tmp\x86\Release\acwin.exe Windows\Installer\Source\Engine\acwin.exe
           copy %AGS_SDL_LIB%\SDL2.dll Windows\Installer\Source\Engine\SDL2.dll
-
       - name: Download AGS manual
         shell: cmd
         run: |
           mkdir Windows\Installer\Source\Docs
           cd Windows\Installer\Source\Docs
           curl -fLJ https://github.com/adventuregamestudio/ags-manual/releases/latest/download/${{env.MANUAL_ASSET}} -o ags-help.chm
-
       - name: Download AGS templates
         shell: cmd
         run: |
           mkdir Windows\Installer\Source\Templates
           curl -fLSs https://github.com/%TEMPLATES_REPOSITORY%/tarball/${{env.BASE_BRANCH}} | tar -f - -xvzC Windows\Installer\Source\Templates --strip-components 2
-
       - name: Download Linux bundle
         uses: actions/download-artifact@v8
         with:
           name: ags-bundle-linux
           path: _linux_tmp
-
       - name: Extract Linux bundle
         shell: cmd
         run: |
@@ -898,13 +864,11 @@ jobs:
           call Script\setvar.cmd ACI_VERSION_STR
           tar -f _linux_tmp\ags_%ACI_VERSION_STR%_linux.tar.gz -xvC Windows\Installer\Source\Linux --strip-components 1
           rd /s /q _linux_tmp
-
       - name: Download Emscripten bundle
         uses: actions/download-artifact@v8
         with:
           name: ags-bundle-emscripten
           path: _ems_tmp
-
       - name: Extract Emscripten files
         shell: cmd
         run: |
@@ -912,13 +876,11 @@ jobs:
           call Script\setvar.cmd ACI_VERSION_STR
           tar -f _ems_tmp\ags_%ACI_VERSION_STR%_web.tar.gz -xvC Windows\Installer\Source\Web
           rd /s /q _ems_tmp
-
       - name: Download Android project archive
         uses: actions/download-artifact@v8
         with:
           name: ags-bundle-android
           path: _android_tmp
-
       - name: Extract Android project
         shell: cmd
         run: |
@@ -926,38 +888,33 @@ jobs:
           call Script\setvar.cmd ACI_VERSION_STR
           tar -f _android_tmp\AGS-%ACI_VERSION_STR%-android-proj-release.zip -xvzC Windows\Installer\Source\Android
           rd /s /q _android_tmp
-
       - name: Download Demo game
         shell: cmd
         run: |
           mkdir Windows\Installer\Source\AGSQuest
           curl -fLSs https://github.com/%DEMOGAME_REPOSITORY%/releases/latest/download/AGSQuest.zip | tar -f - -xvzC Windows\Installer\Source\AGSQuest --strip-components 1
-
       - name: Run Inno Setup
         shell: pwsh
         run: |
           ISCC.exe
           Windows\Installer\build.ps1 -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-
       - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
           name: ags-installer
           path: Windows\Installer\Output\*.exe
-
       - name: Build release archive
         shell: cmd
         run: |
           move Windows\Installer\Source\Docs\* Windows\Installer\Source\Editor\
           move Windows\Installer\Source\Engine\* Windows\Installer\Source\Editor\
           move Windows\Installer\Source\Licenses Windows\Installer\Source\Editor\
-          move Windows\Installer\Source\Linux     Windows\Installer\Source\Editor\
-          move Windows\Installer\Source\Web       Windows\Installer\Source\Editor\
-          move Windows\Installer\Source\Android   Windows\Installer\Source\Editor\
+          move Windows\Installer\Source\Linux Windows\Installer\Source\Editor\
+          move Windows\Installer\Source\Web Windows\Installer\Source\Editor\
+          move Windows\Installer\Source\Android Windows\Installer\Source\Editor\
           move Windows\Installer\Source\Templates Windows\Installer\Source\Editor\
           move Windows\Installer\Source\URLs Windows\Installer\Source\Editor\
           for %%f in (Windows\Installer\Output\*.exe) do tar -f %%~nf.zip -acv --strip-components 4 Windows\Installer\Source\Editor
-
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
@@ -981,107 +938,84 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           submodules: recursive
-
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y libarchive-tools
-
       - name: Read version string
         id: version
         run: |
           version=$(awk -F'[ \" ]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-
       - name: Create source archives
         run: |
           version=${{ steps.version.outputs.version }}
           mkdir -p /tmp/github_release
           for ext in tar.gz tar.xz zip; do
             echo "Writing ${ext} archive..."
-            bsdtar -f "/tmp/github_release/ags_${version}_source.${ext}" \
-              -acs "!\./\(.*\)!ags_${version}_source/\1!" \
-              --exclude ".git*" \
-              --exclude ".github" \
-              --exclude ".cirrus.yml" \
-              .
+            bsdtar -f "/tmp/github_release/ags_${version}_source.${ext}" -acs "!\./\(.*\)!ags_${version}_source/\1!" --exclude ".git*" --exclude ".github" --exclude ".cirrus.yml" .
           done
-
       - name: Download installer
         uses: actions/download-artifact@v8
         with:
           name: ags-installer
           path: /tmp/github_release
-
       - name: Download release archive
         uses: actions/download-artifact@v8
         with:
           name: ags-archive
           path: /tmp/github_release
-
       - name: Download WinDevDependenciesVS
         uses: actions/download-artifact@v8
         with:
           name: WinDevDependenciesVS.zip
           skip-decompress: true
           path: /tmp/github_release
-
       - name: Download Linux bundle
         uses: actions/download-artifact@v8
         with:
           name: ags-bundle-linux
           path: /tmp/github_release
-
       - name: Download Emscripten bundle
         uses: actions/download-artifact@v8
         with:
           name: ags-bundle-emscripten
           path: /tmp/github_release
-
       - name: Download PDB archive
         uses: actions/download-artifact@v8
         with:
           name: pdb-archive
           path: /tmp/github_release
-
       - name: Download Linux .deb packages
         uses: actions/download-artifact@v8
         with:
           pattern: linux-deb-{amd64,i386}
           path: /tmp/github_release
           merge-multiple: true
-
       - name: Download Android APKs
         uses: actions/download-artifact@v8
         with:
           name: android-apks
           path: /tmp/github_release
-
       - name: Download Android project bundle
         uses: actions/download-artifact@v8
         with:
           name: ags-bundle-android
           path: /tmp/github_release
-
       - name: Generate SHA-256 checksums
         run: |
           cd /tmp/github_release
           sha256sum * | tee checksums.sha256
-
-      - run: |
-          ls -la /tmp/github_release/*
-
+      - run: ls -la /tmp/github_release/*
       - name: Create Release and Upload assets
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-
           if gh release view "${tag}" > /dev/null 2>&1; then
             echo "Release ${tag} already exists, skipping creation."
           else
             gh release create "${tag}" --title "${tag}"
           fi
-
           for fpath in /tmp/github_release/*; do
             echo "Uploading ${fpath}"
             gh release upload "${tag}" "${fpath}"
