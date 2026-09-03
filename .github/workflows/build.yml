@@ -26,7 +26,7 @@ jobs:
       matrix:
         platform:
         - { name: Win-mingw-x86_64, os: windows-2022,   sys: Windows, gfx: D3D9, artifact: 'ags-mingw-x86_64', shell: 'msys2 {0}', runbin: "./ags",      bindir: "",        cmakecmd: "cmake", msystem: mingw64, msys-env: mingw-w64-x86_64 }
-        - { name: Win-mingw-arm64,  os: windows-11-arm,   sys: Windows, gfx: D3D9, artifact: 'ags-mingw-arm64',  shell: 'msys2 {0}', runbin: "./ags",      bindir: "",        cmakecmd: "cmake", msystem: clangarm64, msys-env: mingw-w64-clang-aarch64 }
+        - { name: Win-mingw-arm64,  os: windows-11-arm, sys: Windows, gfx: D3D9, artifact: 'ags-mingw-arm64',  shell: 'msys2 {0}', runbin: "./ags",      bindir: "",        cmakecmd: "cmake", msystem: clangarm64, msys-env: mingw-w64-clang-aarch64 }
         - { name: Windows,              os: windows-2022,   sys: Windows, gfx: D3D9, artifact: 'ags-windows',      shell: cmd,         runbin: ".\\ags.exe", bindir: "Release", cmakecmd: "cmake" }
         - { name: Ubuntu-x86_64,        os: ubuntu-latest,    sys: Ubuntu,  gfx: OGL,  artifact: 'ags-linux-x86_64', shell: sh,          runbin: "./ags",      bindir: "",        cmakecmd: "cmake" }
         - { name: Ubuntu-Arm64,         os: ubuntu-22.04-arm, sys: Ubuntu,  gfx: OGL,  artifact: 'ags-linux-Arm64',  shell: sh,          runbin: "./ags",      bindir: "",        cmakecmd: "cmake" }
@@ -74,7 +74,7 @@ jobs:
     - name: Configure CMake
       run: |
         cmake --version
-        ${{ matrix.platform.cmakecmd }} -S "${{github.workspace}}" -B "${{github.workspace}}/build" -DAGS_BUILD_TOOLS=1 -DAGS_TESTS=1 -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+        ${{ matrix.platform.cmakecmd }} -S "${{github.workspace}}" -B "${{github.workspace}}/build" -DAGS_BUILD_TOOLS=1 -DAGS_TESTS=1 -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} ${{ matrix.platform.sys == 'Ubuntu' && '-DSDL_PIPEWIRE=OFF' || '' }}
 
     - name: Build
       run: cmake --build "${{github.workspace}}/build" --config ${{env.BUILD_TYPE}} --parallel 8
@@ -146,7 +146,7 @@ jobs:
       - name: Install bsdtar
         run: sudo apt-get update -y && sudo apt-get install -y libarchive-tools
 
-      - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 #v16
+      - uses: emscripten-core/setup-emsdk@4528d102f7230e0f0e7b276855c01ea1159be0e984 #v16
         with:
           version: ${{env.EM_VERSION}}
 
@@ -288,10 +288,19 @@ jobs:
       - name: Upload WinDevDependenciesVS
         uses: actions/upload-artifact@v7
         with:
-          # because archive is false, the name is the filename
-          if-no-files-found: error
-          archive: false
+          name: WinDevDependenciesVS.zip
           path: WinDevDependenciesVS.zip
+          archive: false
+
+      - name: Build WinDevDependenciesVS archive
+        shell: cmd
+        run: |
+          pushd "C:\Lib\SDL_sound"
+          if exist build_x86 del /Q /S build_x86\* && rd /Q /S build_x86
+          if exist build_x64 del /Q /S build_x64\* && rd /Q /S build_x64
+          popd
+          tar -f WinDevDependenciesVS.zip -acv --strip-components 2 C:\Lib
+          dir WinDevDependenciesVS.zip
 
   windows-msvc-tests:
     name: Windows MSVC Tests
@@ -485,7 +494,7 @@ jobs:
         shell: cmd
         run: |
           cd Solutions
-          msbuild Tools.sln /m /p:MultiProcessorCompilation=true /p:PlatformToolset=v142 /p:Configuration=Debug /p:Platform=x86 /maxcpucount /nologo     
+          msbuild Tools.sln /m /p:MultiProcessorCompilation=true /p:PlatformToolset=v142 /p:Configuration=Debug /p:Platform=x86 /maxcpucount /nologo
 
       - name: Build Compiler (x86 Debug)
         shell: cmd
@@ -688,6 +697,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
+          submodules: recursive
 
       - name: Download Engine x86 PDBs
         uses: actions/download-artifact@v8
@@ -712,7 +723,7 @@ jobs:
 
       - name: Create PDB archive
         run: |
-          version=$(awk -F'[ "]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
+          version=$(awk -F'[ \" ]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
           bsdtar -f "AGS-${version}-pdb.zip" -acv pdbs/
 
       - name: Upload PDB archive
@@ -806,7 +817,7 @@ jobs:
           cp -v debian/copyright $tmp/data/licenses/ags-copyright
           cp -v debian/ags+libraries/startgame $tmp/
           awk 'BEGIN { RS="" } !/make_ags/ { if (NR>1) print RS; print }' debian/ags+libraries/README > $tmp/README
-          version=$(awk -F'[ "]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
+          version=$(awk -F'[ \" ]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
           bsdtar -f ags_${version}_linux.tar.gz -cvzC $tmp data startgame README
 
       - uses: actions/upload-artifact@v7
@@ -922,12 +933,6 @@ jobs:
           mkdir Windows\Installer\Source\AGSQuest
           curl -fLSs https://github.com/%DEMOGAME_REPOSITORY%/releases/latest/download/AGSQuest.zip | tar -f - -xvzC Windows\Installer\Source\AGSQuest --strip-components 1
 
-      #   NOTE: Inno Setup 6.7.1 comes preinstalled in Windows runners.
-      #   It looks like it is also in PATH already, but our script expects its
-      # path through a parameter.
-      #   I will run it without anything because it should print the version
-      # and information that we can use to monitor what is pre-installed and
-      # if it changes.
       - name: Run Inno Setup
         shell: pwsh
         run: |
@@ -983,10 +988,9 @@ jobs:
       - name: Read version string
         id: version
         run: |
-          version=$(awk -F'[ "]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
+          version=$(awk -F'[ \" ]+' '$1=="#define" && $2=="ACI_VERSION_STR" { print $3; exit }' Common/ac/def_version.h)
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      # source archive formats used by downstream when packaging ags
       - name: Create source archives
         run: |
           version=${{ steps.version.outputs.version }}
