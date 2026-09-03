@@ -1,0 +1,47 @@
+name: Build Native AGS Shaders Linux
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Native AGS Linux x86_64
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            cmake g++ pkg-config python3-pip \
+            gnome-desktop-testing libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
+            libusb-1.0-0-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev fcitx-libs-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAGS_BUILD_TOOLS=OFF \
+            -DAGS_TESTS=OFF \
+            -DSDL_PIPEWIRE=OFF
+
+      - name: Build AGS engine
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Upload Linux engine
+        uses: actions/upload-artifact@v7
+        with:
+          name: ags-native-shaders-linux-x86_64
+          path: build/ags
+          if-no-files-found: error
