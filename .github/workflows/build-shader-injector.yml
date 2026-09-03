@@ -34,6 +34,9 @@ jobs:
       - name: Smoke test multipass chain
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/invert-chain.agschain invert
 
+      - name: Smoke test PassPrev texture history
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/passprev-chain.agschain
+
       - name: Smoke test GLSL preset loader
         run: |
           mkdir -p /tmp/ags-shader-glslp
