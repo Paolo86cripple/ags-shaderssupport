@@ -1,0 +1,4 @@
+# AGS shader chain v1
+pass=identity.glsl
+pass=invert.glsl
+pass=passprev2.glsl
