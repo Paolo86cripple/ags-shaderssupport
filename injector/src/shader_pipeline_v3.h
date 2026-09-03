@@ -22,4 +22,17 @@ private:
     bool ensure_fbo_functions(std::string&);
     bool ensure_target(Target&,int,int,bool,std::string&);
     void destroy_target(Target&);
+    static bool parse_bool(const std::string &s, bool d) {
+        if (s == "1" || s == "true" || s == "TRUE") return true;
+        if (s == "0" || s == "false" || s == "FALSE") return false;
+        return d;
+    }
+    static int parse_int(const std::string &s, int d) {
+        try { size_t p = 0; int v = std::stoi(s, &p); return p == s.size() ? v : d; }
+        catch (...) { return d; }
+    }
+    static float parse_float(const std::string &s, float d) {
+        try { size_t p = 0; float v = std::stof(s, &p); return p == s.size() ? v : d; }
+        catch (...) { return d; }
+    }
 };
