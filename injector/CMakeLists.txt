@@ -19,12 +19,13 @@ set(AGS_SHADER_PIPELINE_SOURCES
 )
 
 # OpenGL compatibility profiles treat generic attribute 0 specially: querying
-# GL_CURRENT_VERTEX_ATTRIB for index 0 may raise GL_INVALID_OPERATION.  Keep the
-# workaround scoped to the v4 implementation instead of altering application GL.
+# GL_CURRENT_VERTEX_ATTRIB for index 0 may raise GL_INVALID_OPERATION. Keep the
+# compatibility shim scoped to v4. The second shim delegates to the first and
+# only performs framebuffer readback when AGS_SHADER_DUMP_PASSES_DIR is set.
 set_source_files_properties(
     src/shader_pipeline_v4.cpp
     PROPERTIES
-    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h"
+    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_pass_diagnostics.h"
 )
 
 add_library(ags-shader SHARED
