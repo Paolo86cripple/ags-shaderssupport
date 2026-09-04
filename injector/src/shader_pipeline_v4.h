@@ -12,6 +12,26 @@ public:
     static constexpr int MaxPassRefs = 16;
     static constexpr int MaxFrameHistory = 8;
 
+    struct FrameUniform {
+        int texture = -1;
+        int input_size = -1;
+        int texture_size = -1;
+
+        bool used() const {
+            return texture >= 0 || input_size >= 0 || texture_size >= 0;
+        }
+    };
+
+    struct Target {
+        unsigned fbo = 0;
+        unsigned texture = 0;
+        int width = 0;
+        int height = 0;
+        int input_width = 0;
+        int input_height = 0;
+        int format = 0;
+    };
+
     ~ShaderPipelineV4();
 
     bool load(const std::string &path, std::string &error);
@@ -24,16 +44,6 @@ public:
                int output_height);
 
 private:
-    struct FrameUniform {
-        int texture = -1;
-        int input_size = -1;
-        int texture_size = -1;
-
-        bool used() const {
-            return texture >= 0 || input_size >= 0 || texture_size >= 0;
-        }
-    };
-
     struct AliasUniform {
         std::size_t pass_index = 0;
         FrameUniform frame;
@@ -78,16 +88,6 @@ private:
         unsigned frame_count_mod = 0;
         std::string source_path;
         std::string alias;
-    };
-
-    struct Target {
-        unsigned fbo = 0;
-        unsigned texture = 0;
-        int width = 0;
-        int height = 0;
-        int input_width = 0;
-        int input_height = 0;
-        int format = 0;
     };
 
     std::vector<Pass> _passes;
