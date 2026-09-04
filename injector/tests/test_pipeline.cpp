@@ -189,11 +189,22 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "shader test: load failed: %s\n", error.c_str());
         return 6;
     }
+
+    gl_error = glGetError();
+    if (gl_error != GL_NO_ERROR) {
+        std::fprintf(stderr, "shader test: load GL error 0x%x\n", gl_error);
+        return 13;
+    }
     if (!verify_state_probe(probe, "load")) return 10;
 
     std::fprintf(stderr, "shader test: pipeline loaded\n");
     pipeline.apply(source_texture, 1, 1, 64, 64);
     glFinish();
+    gl_error = glGetError();
+    if (gl_error != GL_NO_ERROR) {
+        std::fprintf(stderr, "shader test: apply GL error 0x%x\n", gl_error);
+        return 7;
+    }
     if (!verify_state_probe(probe, "apply")) return 11;
 
     if (temporal_prev || temporal_feedback) {
@@ -215,6 +226,11 @@ int main(int argc, char **argv) {
 
         pipeline.apply(source_texture, 1, 1, 64, 64);
         glFinish();
+        gl_error = glGetError();
+        if (gl_error != GL_NO_ERROR) {
+            std::fprintf(stderr, "shader test: temporal apply GL error 0x%x\n", gl_error);
+            return 14;
+        }
         if (!verify_state_probe(probe, "temporal apply")) return 12;
     }
 
@@ -222,12 +238,11 @@ int main(int argc, char **argv) {
         pipeline.apply(source_texture, 1, 1, 64, 64);
         pipeline.apply(source_texture, 1, 1, 64, 64);
         glFinish();
-    }
-
-    gl_error = glGetError();
-    if (gl_error != GL_NO_ERROR) {
-        std::fprintf(stderr, "shader test: pipeline GL error 0x%x\n", gl_error);
-        return 7;
+        gl_error = glGetError();
+        if (gl_error != GL_NO_ERROR) {
+            std::fprintf(stderr, "shader test: frame_mod apply GL error 0x%x\n", gl_error);
+            return 15;
+        }
     }
 
     unsigned char result[4] = {0, 0, 0, 0};
