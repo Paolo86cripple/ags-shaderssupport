@@ -19,12 +19,11 @@ std::string trim(const std::string &s) {
 
 std::string unquote(std::string s) {
     s = trim(s);
-    // RetroArch's preset corpus contains a handful of legacy entries with a
-    // missing closing quote (for example film/technicolor.glslp). Be liberal
-    // at the preset boundary: strip either quote independently instead of
-    // requiring a perfectly balanced pair.
-    if (!s.empty() && s.front() == '"') s.erase(s.begin());
-    if (!s.empty() && s.back() == '"') s.pop_back();
+    // A few historical RetroArch presets contain missing or duplicated quote
+    // characters. Treat quote runs at either edge as decoration while leaving
+    // embedded quotes untouched.
+    while (!s.empty() && s.front() == '"') s.erase(s.begin());
+    while (!s.empty() && s.back() == '"') s.pop_back();
     return s;
 }
 
@@ -147,8 +146,6 @@ bool load_recursive(const std::string &path,
         if (!entry.key.empty()) local_entries.push_back(entry);
     }
 
-    // RetroArch preset inheritance treats referenced presets as bases/overlays;
-    // values in the referencing file itself win over every referenced value.
     for (const std::string &reference : references) {
         if (!load_recursive(reference, entries, stack, error)) {
             stack.pop_back();
@@ -253,9 +250,6 @@ bool ags_preset_write_flat(const std::string &source_path,
         else if (frame_count_mod_key(entry.key))
             value = normalize_uint_prefix(value);
         else {
-            // RetroArch's GL2 path gives floating-point FBOs precedence over
-            // sRGB when both flags are requested for the same pass. Preserve
-            // that behavior instead of rejecting legacy presets that set both.
             std::string index;
             if (indexed_key(entry.key, "srgb_framebuffer", index) &&
                 parse_bool_value(value)) {
