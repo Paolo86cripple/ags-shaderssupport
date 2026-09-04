@@ -1,6 +1,6 @@
 # AGS Shader Injector (Linux)
 
-This directory contains a **per-game native Linux post-processing add-on**. It does not replace the AGS engine and does not require Wine, Proton, RetroArch or libretro.
+This directory contains a **per-game native Linux post-processing add-on**. It does not replace the AGS engine and does not require Wine, Proton, RetroArch or libretro at runtime.
 
 The current backend targets AGS games using SDL2/OpenGL on Linux. The shared library is loaded with `LD_PRELOAD`, intercepts `SDL_GL_SwapWindow()`, captures the current OpenGL backbuffer, applies an external shader pipeline, and then lets SDL present the processed frame.
 
@@ -49,6 +49,25 @@ The pipeline supports classic Libretro/RetroArch `.glsl` and `.glslp` pipelines,
 
 CI pins a known `libretro/glsl-shaders` revision and strictly load-tests every usable `.glslp` preset plus every standalone `.glsl` source in that revision.
 
+## RetroArch GL2 renderchain compatibility
+
+The active v4 backend is now wrapped by a desktop OpenGL adapter derived from RetroArch's classic GL2 renderchain and GLSL backend. This is not a runtime dependency on RetroArch: the relevant behavior is adapted into the injector and built into `libags-shader.so`.
+
+Important imported behavior includes:
+
+- separate logical image size and backing texture size for FBO passes;
+- power-of-two backing textures used by the classic GL2 renderchain;
+- matching `InputSize`, `TextureSize` and valid-image UV ratios;
+- RetroArch-style float framebuffer allocation and sRGB behavior;
+- classic frame/global uniforms;
+- cached `glGetUniformLocation()` results;
+- cached wrap/filter texture parameters;
+- pass/reference texture coordinates tied to the referenced backing texture.
+
+A dedicated CI fixture verifies that a logical 3x5 intermediate pass is exposed to the next shader as `InputSize=3x5`, `TextureSize=4x8`, with UVs restricted to the valid 3x5 image area.
+
+The adapter retains the relevant RetroArch copyright notices. See the repository root `COPYING` and `THIRD_PARTY.md`.
+
 ## GPU source resampling for retro upscalers
 
 Some classic upscalers assume their `Source` is a low-resolution emulator/core image. An AGS game may already have been scaled to the full window before the injector sees it. Feeding a 1920x1080 source to a preset that internally scales by 3x and then 2x can therefore create extremely large render targets.
@@ -69,6 +88,8 @@ With `AGS_SHADER_DEBUG=1`, the injector prints the active OpenGL vendor, rendere
 ```text
 AGS shader: hardware source resample 1920x1080 -> 640x360 (nearest)
 ```
+
+The long-term target is automatic use of the AGS game's logical/native rendering size so presets such as ScaleFX receive the same kind of low-resolution source they receive from an emulator core in RetroArch.
 
 ## Per-pass framebuffer diagnostics
 
@@ -150,3 +171,7 @@ uniform float uFrameCount;
 uniform int FrameCount;
 uniform int FrameDirection;
 ```
+
+## License
+
+The injector and the repository are released under GNU GPL version 3 or later (`GPL-3.0-or-later`). The complete license text is in `COPYING`; RetroArch-derived/adapted portions retain their upstream notices and attribution in `THIRD_PARTY.md`.
