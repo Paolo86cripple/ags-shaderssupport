@@ -2,6 +2,15 @@ name: Build AGS Shader Injector
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'injector/**'
+      - '.github/workflows/build-shader-injector.yml'
+      - 'LICENSE'
+      - 'COPYING'
+      - 'THIRD_PARTY.md'
 
 permissions:
   contents: read
@@ -203,7 +212,7 @@ jobs:
           cp build/injector/libags-shader.so dist/ags-shader/
           cp injector/run-with-shader.sh dist/ags-shader/
           cp injector/README.md dist/ags-shader/
-          cp LICENSE THIRD_PARTY.md dist/ags-shader/
+          cp LICENSE COPYING THIRD_PARTY.md dist/ags-shader/
           cp injector/shaders/* dist/ags-shader/shaders/
 
       - name: Upload single artifact
