@@ -19,9 +19,24 @@ std::string trim(const std::string &s) {
 
 std::string unquote(std::string s) {
     s = trim(s);
-    if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
-        return s.substr(1, s.size() - 2);
+    // RetroArch's preset corpus contains a handful of legacy entries with a
+    // missing closing quote (for example film/technicolor.glslp). Be liberal
+    // at the preset boundary: strip either quote independently instead of
+    // requiring a perfectly balanced pair.
+    if (!s.empty() && s.front() == '"') s.erase(s.begin());
+    if (!s.empty() && s.back() == '"') s.pop_back();
     return s;
+}
+
+std::string lower(std::string s) {
+    for (char &c : s)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return s;
+}
+
+bool parse_bool_value(const std::string &value) {
+    const std::string v = lower(trim(value));
+    return v == "1" || v == "true";
 }
 
 std::string parent_dir(const std::string &path) {
@@ -164,13 +179,18 @@ bool shader_key(const std::string &key) {
     return true;
 }
 
-bool frame_count_mod_key(const std::string &key) {
-    static const std::string prefix = "frame_count_mod";
+bool indexed_key(const std::string &key, const std::string &prefix, std::string &index) {
     if (key.compare(0, prefix.size(), prefix) != 0 || key.size() <= prefix.size())
         return false;
     for (std::size_t i = prefix.size(); i < key.size(); ++i)
         if (key[i] < '0' || key[i] > '9') return false;
+    index = key.substr(prefix.size());
     return true;
+}
+
+bool frame_count_mod_key(const std::string &key) {
+    std::string ignored;
+    return indexed_key(key, "frame_count_mod", ignored);
 }
 
 std::string normalize_uint_prefix(const std::string &value) {
@@ -232,6 +252,17 @@ bool ags_preset_write_flat(const std::string &source_path,
             value = ags_preset_resolve_path(entry);
         else if (frame_count_mod_key(entry.key))
             value = normalize_uint_prefix(value);
+        else {
+            // RetroArch's GL2 path gives floating-point FBOs precedence over
+            // sRGB when both flags are requested for the same pass. Preserve
+            // that behavior instead of rejecting legacy presets that set both.
+            std::string index;
+            if (indexed_key(entry.key, "srgb_framebuffer", index) &&
+                parse_bool_value(value)) {
+                const AgsPresetEntry *fp = ags_preset_find(entries, "float_framebuffer" + index);
+                if (fp && parse_bool_value(fp->value)) value = "false";
+            }
+        }
         output << entry.key << " = " << value << '\n';
     }
 
