@@ -33,6 +33,7 @@ set_source_files_properties(
 
 add_library(ags-shader SHARED
     src/preload.cpp
+    src/ags_native_source_hook.cpp
     ${AGS_SHADER_PIPELINE_SOURCES}
 )
 target_include_directories(ags-shader PRIVATE src)
