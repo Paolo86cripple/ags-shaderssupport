@@ -23,10 +23,69 @@ inline void get_vertex_attrib_fv(GLuint index, GLenum pname, GLfloat *params) {
 }
 
 inline void vertex_attrib4fv(GLuint index, const GLfloat *values) {
-    // In the legacy compatibility profile, generic attribute 0 has no
-    // meaningful current value to preserve. Array state is restored separately.
     if (index == 0) return;
     ::glVertexAttrib4fv(index, values);
+}
+
+inline const char *capability_defines() {
+    return
+        "#ifndef _HAS_ORIGINALASPECT_UNIFORMS\n"
+        "#define _HAS_ORIGINALASPECT_UNIFORMS\n"
+        "#endif\n"
+        "#ifndef _HAS_FRAMETIME_UNIFORMS\n"
+        "#define _HAS_FRAMETIME_UNIFORMS\n"
+        "#endif\n"
+        "#ifndef _HAS_SENSOR_UNIFORMS\n"
+        "#define _HAS_SENSOR_UNIFORMS\n"
+        "#endif\n";
+}
+
+struct ShaderSourceState {
+    GLuint shader = 0;
+    std::string source;
+    bool explicit_version = false;
+};
+
+inline std::vector<ShaderSourceState> &shader_sources() {
+    static std::vector<ShaderSourceState> states;
+    return states;
+}
+
+inline ShaderSourceState *find_shader_source(GLuint shader) {
+    std::vector<ShaderSourceState> &states = shader_sources();
+    for (ShaderSourceState &state : states)
+        if (state.shader == shader) return &state;
+    return nullptr;
+}
+
+inline std::string with_capabilities(const std::string &source,
+                                     const char *version_prefix = nullptr,
+                                     bool enable_420pack = false) {
+    std::string patched = source;
+    const std::size_t version = patched.find("#version");
+    if (version != std::string::npos) {
+        const std::size_t end = patched.find('\n', version);
+        std::string insert = capability_defines();
+        if (enable_420pack)
+            insert += "#extension GL_ARB_shading_language_420pack : enable\n";
+        if (end != std::string::npos)
+            patched.insert(end + 1, insert);
+        else
+            patched += std::string("\n") + insert;
+        return patched;
+    }
+
+    std::string prefix;
+    if (version_prefix) prefix += version_prefix;
+    if (enable_420pack)
+        prefix += "#extension GL_ARB_shading_language_420pack : enable\n";
+    prefix += capability_defines();
+    return prefix + patched;
+}
+
+inline void submit_shader_source(GLuint shader, const std::string &source) {
+    const GLchar *patched = source.c_str();
+    ::glShaderSource(shader, 1, &patched, nullptr);
 }
 
 inline void shader_source(GLuint shader,
@@ -42,38 +101,49 @@ inline void shader_source(GLuint shader,
             source.append(strings[i]);
     }
 
-    static const char capability_defines[] =
-        "#ifndef _HAS_ORIGINALASPECT_UNIFORMS\n"
-        "#define _HAS_ORIGINALASPECT_UNIFORMS\n"
-        "#endif\n"
-        "#ifndef _HAS_FRAMETIME_UNIFORMS\n"
-        "#define _HAS_FRAMETIME_UNIFORMS\n"
-        "#endif\n"
-        "#ifndef _HAS_SENSOR_UNIFORMS\n"
-        "#define _HAS_SENSOR_UNIFORMS\n"
-        "#endif\n";
-
-    const std::size_t version = source.find("#version");
-    if (version != std::string::npos) {
-        const std::size_t end = source.find('\n', version);
-        if (end != std::string::npos)
-            source.insert(end + 1, capability_defines);
-        else
-            source += std::string("\n") + capability_defines;
+    ShaderSourceState *state = find_shader_source(shader);
+    if (!state) {
+        ShaderSourceState fresh;
+        fresh.shader = shader;
+        shader_sources().push_back(fresh);
+        state = &shader_sources().back();
     }
-    else {
-        // Desktop RetroArch GLSL shaders without an explicit #version span
-        // several generations of the GLSL language.  Leaving them at the GL
-        // compiler default (1.10) rejects common libretro idioms such as
-        // texture(), round(), integer modulo/bitwise operators, uint and
-        // matrix/array constructors.  Our AGS injector requires a desktop
-        // compatibility context and can safely use the broadly compatible 1.30
-        // language level while retaining legacy attribute/varying syntax.
-        source.insert(0, std::string("#version 130\n") + capability_defines);
-    }
+    state->source = source;
+    state->explicit_version = source.find("#version") != std::string::npos;
 
-    const GLchar *patched = source.c_str();
-    ::glShaderSource(shader, 1, &patched, nullptr);
+    // Preserve the shader's legacy language level first. A large part of the
+    // Libretro GLSL collection intentionally relies on pre-1.30 semantics.
+    submit_shader_source(shader, with_capabilities(source));
+}
+
+inline void compile_shader(GLuint shader) {
+    ::glCompileShader(shader);
+
+    GLint ok = GL_FALSE;
+    ::glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (ok == GL_TRUE) return;
+
+    ShaderSourceState *state = find_shader_source(shader);
+    if (!state || state->explicit_version) return;
+
+    // RetroArch's modern desktop GL path uses GLSL 1.30 for versionless
+    // shaders. Retry at that language level only when legacy compilation
+    // failed, keeping genuinely old shaders on their original semantics.
+    submit_shader_source(shader,
+                         with_capabilities(state->source, "#version 130\n"));
+    ::glCompileShader(shader);
+    ::glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (ok == GL_TRUE) return;
+
+    // A small number of historical GLSL presets use C-style aggregate
+    // initialization accepted through 420pack on desktop OpenGL. Try the
+    // extension as a final compatibility tier; unsupported drivers simply
+    // leave the shader failed with their normal compiler log.
+    submit_shader_source(shader,
+                         with_capabilities(state->source,
+                                           "#version 130\n",
+                                           true));
+    ::glCompileShader(shader);
 }
 
 inline void set_uniform_1i(GLuint program, const char *name, GLint value) {
@@ -116,9 +186,6 @@ inline void bind_texture(GLenum target, GLuint texture) {
                    static_cast<GLfloat>(viewport[2]),
                    static_cast<GLfloat>(viewport[3]));
 
-    // RetroArch exposes these values for shaders that opt into the capability
-    // macros. Until AGS timing is wired directly into the injector, use a
-    // stable 60 Hz fallback rather than leaving the uniforms undefined.
     set_uniform_1i(program, "FrameTimeDelta", 16667);
     set_uniform_1f(program, "OriginalFPS", 60.f);
     set_uniform_1i(program, "Rotation", 0);
@@ -230,9 +297,6 @@ inline void draw_arrays(GLenum mode, GLint first, GLsizei count) {
         if (length <= 0) continue;
         name[static_cast<std::size_t>(length)] = '\0';
 
-        // VertexCoord is position data and TexCoord/aTexCoord are already
-        // provided by ShaderPipelineV4. All other classic RetroArch semantic
-        // coordinates use the same normalized quad coordinates.
         if (!ends_with_texcoord(name.data()) ||
             std::strcmp(name.data(), "TexCoord") == 0 ||
             std::strcmp(name.data(), "aTexCoord") == 0)
@@ -277,5 +341,6 @@ inline void draw_arrays(GLenum mode, GLint first, GLsizei count) {
 #define glGetVertexAttribfv ags_shader_gl_compat::get_vertex_attrib_fv
 #define glVertexAttrib4fv ags_shader_gl_compat::vertex_attrib4fv
 #define glShaderSource ags_shader_gl_compat::shader_source
+#define glCompileShader ags_shader_gl_compat::compile_shader
 #define glBindTexture ags_shader_gl_compat::bind_texture
 #define glDrawArrays ags_shader_gl_compat::draw_arrays
