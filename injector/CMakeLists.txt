@@ -10,10 +10,14 @@ pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 find_package(OpenGL REQUIRED)
 find_package(PNG REQUIRED)
 
-add_library(ags-shader SHARED
-    src/preload.cpp
+set(AGS_SHADER_PIPELINE_SOURCES
     src/shader_pipeline_v4.cpp
     src/lut_manager.cpp
+)
+
+add_library(ags-shader SHARED
+    src/preload.cpp
+    ${AGS_SHADER_PIPELINE_SOURCES}
 )
 target_include_directories(ags-shader PRIVATE src)
 target_link_libraries(ags-shader PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG dl)
@@ -23,10 +27,18 @@ set_target_properties(ags-shader PROPERTIES PREFIX "lib" OUTPUT_NAME "ags-shader
 
 add_executable(ags-shader-pipeline-test
     tests/test_pipeline.cpp
-    src/shader_pipeline_v4.cpp
-    src/lut_manager.cpp
+    ${AGS_SHADER_PIPELINE_SOURCES}
 )
 target_include_directories(ags-shader-pipeline-test PRIVATE src)
 target_link_libraries(ags-shader-pipeline-test PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG)
 target_compile_options(ags-shader-pipeline-test PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(ags-shader-pipeline-test PRIVATE GL_GLEXT_PROTOTYPES=1)
+
+add_executable(ags-shader-load-test
+    tests/test_load.cpp
+    ${AGS_SHADER_PIPELINE_SOURCES}
+)
+target_include_directories(ags-shader-load-test PRIVATE src)
+target_link_libraries(ags-shader-load-test PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG)
+target_compile_options(ags-shader-load-test PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(ags-shader-load-test PRIVATE GL_GLEXT_PROTOTYPES=1)
