@@ -220,7 +220,10 @@ extern "C" void ags_shader_gl_delete_textures(GLsizei count, const GLuint *textu
 }
 
 void *wrapped_proc(const char *name, void *real_proc) {
-    if (!name) return real_proc;
+    // Preserve SDL/GL loader fallback behavior exactly. If the requested core
+    // spelling is unavailable, return nullptr so callers may retry the EXT/OES
+    // spelling instead of receiving a wrapper with no real implementation.
+    if (!name || !real_proc) return real_proc;
 
     if (std::strcmp(name, "glBindFramebuffer") == 0 ||
         std::strcmp(name, "glBindFramebufferEXT") == 0) {
