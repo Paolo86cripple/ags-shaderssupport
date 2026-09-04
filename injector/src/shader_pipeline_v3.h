@@ -12,6 +12,7 @@ public:
     void apply(unsigned input_texture, int input_width, int input_height, int output_width, int output_height);
 private:
     static constexpr int MaxPrevPasses = 8;
+    struct Parameter { std::string name; float value=0.f; };
     struct Pass {
         unsigned program=0;
         int texture=-1,input_size=-1,texture_size=-1,output_size=-1,original_size=-1,texel_size=-1,frame_count=-1,frame_direction=-1,time=-1,mvp_matrix=-1;
@@ -32,16 +33,18 @@ private:
     struct Target { unsigned fbo=0,texture=0; int width=0,height=0,format=0; };
     std::vector<Pass> _passes;
     std::vector<Target> _targets;
+    std::vector<Parameter> _parameters;
     unsigned long long _frame_count=0;
     bool load_text(const std::string&,std::string&,std::string&) const;
     bool add_pass(const std::string&,const Pass*,std::string&);
     bool create_program(const std::string&,const std::string&,unsigned&,std::string&) const;
     bool compile_shader(unsigned,const std::string&,unsigned&,std::string&) const;
     bool parse_chain(const std::string&,std::vector<std::string>&,std::string&) const;
-    bool parse_glslp(const std::string&,std::vector<Pass>&,std::string&) const;
+    bool parse_glslp(const std::string&,std::vector<Pass>&,std::string&);
     bool ensure_fbo_functions(std::string&);
     bool ensure_target(Target&,int,int,bool,bool,std::string&);
     void destroy_target(Target&);
+    void set_parameter(const std::string&,float,bool);
     static bool parse_bool(const std::string &s, bool d) {
         if (s == "1" || s == "true" || s == "TRUE") return true;
         if (s == "0" || s == "false" || s == "FALSE") return false;
