@@ -18,8 +18,9 @@ struct StateProbe {
     GLboolean depth = GL_FALSE;
     GLboolean cull = GL_FALSE;
     GLboolean scissor = GL_FALSE;
-    GLint attrib_enabled[3] = {0, 0, 0};
+    GLint attrib_enabled[4] = {0, 0, 0, 0};
     void *attrib0_pointer = nullptr;
+    void *attrib3_pointer = nullptr;
 };
 
 const GLfloat kProbeVertices[8] = {
@@ -58,14 +59,17 @@ void setup_state_probe(StateProbe &probe) {
     glVertexAttrib4f(1, 0.25f, 0.5f, 0.75f, 1.0f);
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, kProbeVertices);
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 0, kProbeVertices);
 
     probe.blend = glIsEnabled(GL_BLEND);
     probe.depth = glIsEnabled(GL_DEPTH_TEST);
     probe.cull = glIsEnabled(GL_CULL_FACE);
     probe.scissor = glIsEnabled(GL_SCISSOR_TEST);
-    for (GLuint i = 0; i < 3; ++i)
+    for (GLuint i = 0; i < 4; ++i)
         glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &probe.attrib_enabled[i]);
     glGetVertexAttribPointerv(0, GL_VERTEX_ATTRIB_ARRAY_POINTER, &probe.attrib0_pointer);
+    glGetVertexAttribPointerv(3, GL_VERTEX_ATTRIB_ARRAY_POINTER, &probe.attrib3_pointer);
 }
 
 bool verify_state_probe(const StateProbe &probe, const char *where) {
@@ -94,7 +98,7 @@ bool verify_state_probe(const StateProbe &probe, const char *where) {
     if (glIsEnabled(GL_CULL_FACE) != probe.cull) ok = false;
     if (glIsEnabled(GL_SCISSOR_TEST) != probe.scissor) ok = false;
 
-    for (GLuint i = 0; i < 3; ++i) {
+    for (GLuint i = 0; i < 4; ++i) {
         GLint enabled = 0;
         glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
         if (enabled != probe.attrib_enabled[i]) ok = false;
@@ -103,6 +107,8 @@ bool verify_state_probe(const StateProbe &probe, const char *where) {
     void *pointer = nullptr;
     glGetVertexAttribPointerv(0, GL_VERTEX_ATTRIB_ARRAY_POINTER, &pointer);
     if (pointer != probe.attrib0_pointer) ok = false;
+    glGetVertexAttribPointerv(3, GL_VERTEX_ATTRIB_ARRAY_POINTER, &pointer);
+    if (pointer != probe.attrib3_pointer) ok = false;
 
     if (!ok)
         std::fprintf(stderr, "shader test: OpenGL state changed after %s\n", where);
@@ -116,6 +122,7 @@ int main(int argc, char **argv) {
     const bool expect_invert = mode == "invert";
     const bool temporal_prev = mode == "prev";
     const bool temporal_feedback = mode == "feedback";
+    const bool frame_mod = mode == "frame_mod";
     const bool state_test = mode == "state";
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) return 2;
@@ -209,6 +216,12 @@ int main(int argc, char **argv) {
         pipeline.apply(source_texture, 1, 1, 64, 64);
         glFinish();
         if (!verify_state_probe(probe, "temporal apply")) return 12;
+    }
+
+    if (frame_mod) {
+        pipeline.apply(source_texture, 1, 1, 64, 64);
+        pipeline.apply(source_texture, 1, 1, 64, 64);
+        glFinish();
     }
 
     gl_error = glGetError();
