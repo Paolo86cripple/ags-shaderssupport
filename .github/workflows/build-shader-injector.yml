@@ -14,6 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout pinned Libretro GLSL shaders
+        uses: actions/checkout@v4
+        with:
+          repository: libretro/glsl-shaders
+          ref: 235448f244bf676d135f7b25ea6b8e1eae41c4e4
+          path: upstream-glsl-shaders
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -45,6 +52,12 @@ jobs:
 
       - name: Smoke test PARAMETER_UNIFORM preset override
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-parameter.glslp
+
+      - name: Load pinned real ScaleFX rAA AA preset
+        run: xvfb-run -a ./build/injector/ags-shader-load-test 'upstream-glsl-shaders/presets/scalefx+rAA+aa.glslp'
+
+      - name: Load pinned real ScaleFX rAA AA fast preset
+        run: xvfb-run -a ./build/injector/ags-shader-load-test 'upstream-glsl-shaders/presets/scalefx+rAA+aa-fast.glslp'
 
       - name: Smoke test GLSL preset loader
         run: |
