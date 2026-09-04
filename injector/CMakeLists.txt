@@ -16,6 +16,7 @@ set(AGS_SHADER_PIPELINE_SOURCES
     src/shader_pipeline_v4.cpp
     src/preset_parser.cpp
     src/lut_manager.cpp
+    src/ags_native_source_hook.cpp
 )
 
 # The v4 backend is compiled through four scoped compatibility/execution layers:
@@ -33,7 +34,6 @@ set_source_files_properties(
 
 add_library(ags-shader SHARED
     src/preload.cpp
-    src/ags_native_source_hook.cpp
     ${AGS_SHADER_PIPELINE_SOURCES}
 )
 target_include_directories(ags-shader PRIVATE src)
@@ -47,7 +47,7 @@ add_executable(ags-shader-pipeline-test
     ${AGS_SHADER_PIPELINE_SOURCES}
 )
 target_include_directories(ags-shader-pipeline-test PRIVATE src)
-target_link_libraries(ags-shader-pipeline-test PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG JPEG::JPEG)
+target_link_libraries(ags-shader-pipeline-test PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG JPEG::JPEG dl)
 target_compile_options(ags-shader-pipeline-test PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(ags-shader-pipeline-test PRIVATE GL_GLEXT_PROTOTYPES=1)
 
@@ -56,6 +56,6 @@ add_executable(ags-shader-load-test
     ${AGS_SHADER_PIPELINE_SOURCES}
 )
 target_include_directories(ags-shader-load-test PRIVATE src)
-target_link_libraries(ags-shader-load-test PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG JPEG::JPEG)
+target_link_libraries(ags-shader-load-test PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG JPEG::JPEG dl)
 target_compile_options(ags-shader-load-test PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(ags-shader-load-test PRIVATE GL_GLEXT_PROTOTYPES=1)
