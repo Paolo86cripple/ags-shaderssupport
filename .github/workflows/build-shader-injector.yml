@@ -92,6 +92,8 @@ jobs:
           float_framebuffer0 = true
           scale_type0 = source
           scale0 = 1.0
+          wrap_mode1 = clamp_to_edge
+          filter_linear1 = false
           EOF
           xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-glslp-advanced/float.glslp
           cat > /tmp/ags-shader-glslp-advanced/srgb.glslp <<'EOF'
@@ -103,6 +105,8 @@ jobs:
           srgb_framebuffer0 = true
           scale_type0 = source
           scale0 = 1.0
+          wrap_mode1 = clamp_to_edge
+          filter_linear1 = false
           EOF
           xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-glslp-advanced/srgb.glslp
 
