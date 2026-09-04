@@ -1,0 +1,4 @@
+shaders = 1
+shader0 = retroarch-frame-mod.glsl
+filter_linear0 = false
+frame_count_mod0 = 2.0
