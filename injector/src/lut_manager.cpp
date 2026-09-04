@@ -1,13 +1,14 @@
 #include "lut_manager.h"
 
 #include <GL/gl.h>
+#include <jpeglib.h>
 #include <png.h>
 
 #include <cctype>
-#include <fstream>
+#include <cstdio>
+#include <setjmp.h>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -79,6 +80,12 @@ std::vector<std::string> split_semicolon(const std::string &s) {
     return out;
 }
 
+bool suffix(const std::string &path, const char *extension) {
+    const std::string p = lower(path);
+    const std::string e = lower(extension);
+    return p.size() >= e.size() && p.compare(p.size() - e.size(), e.size(), e) == 0;
+}
+
 struct UploadState {
     GLint active_texture = GL_TEXTURE0;
     GLint unit0_binding = 0;
@@ -97,6 +104,42 @@ struct UploadState {
         glActiveTexture(static_cast<GLenum>(active_texture));
     }
 };
+
+bool upload_rgba(Lut &lut,
+                 const std::vector<unsigned char> &pixels,
+                 std::string &error) {
+    if (lut.width <= 0 || lut.height <= 0 ||
+        pixels.size() != static_cast<size_t>(lut.width) * static_cast<size_t>(lut.height) * 4u) {
+        error = "invalid decoded LUT image: " + lut.path;
+        return false;
+    }
+
+    UploadState state;
+    glGenTextures(1, &lut.texture);
+    glBindTexture(GL_TEXTURE_2D, lut.texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, lut.wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, lut.wrap);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA,
+                 lut.width,
+                 lut.height,
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 pixels.data());
+
+    if (glGetError() != GL_NO_ERROR) {
+        error = "OpenGL failed to upload shader texture: " + lut.path;
+        glDeleteTextures(1, &lut.texture);
+        lut.texture = 0;
+        return false;
+    }
+    return true;
+}
 
 bool load_png(Lut &lut, std::string &error) {
     png_image image;
@@ -118,36 +161,84 @@ bool load_png(Lut &lut, std::string &error) {
     lut.width = static_cast<int>(image.width);
     lut.height = static_cast<int>(image.height);
     png_image_free(&image);
+    return upload_rgba(lut, pixels, error);
+}
 
-    UploadState state;
-    glGenTextures(1, &lut.texture);
-    glBindTexture(GL_TEXTURE_2D, lut.texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, lut.wrap);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, lut.wrap);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 GL_RGBA,
-                 lut.width,
-                 lut.height,
-                 0,
-                 GL_RGBA,
-                 GL_UNSIGNED_BYTE,
-                 pixels.data());
+struct JpegErrorManager {
+    jpeg_error_mgr base;
+    jmp_buf jump;
+    char message[JMSG_LENGTH_MAX];
+};
 
-    if (glGetError() != GL_NO_ERROR) {
-        error = "OpenGL failed to upload LUT PNG: " + lut.path;
-        glDeleteTextures(1, &lut.texture);
-        lut.texture = 0;
+void jpeg_error_exit(j_common_ptr common) {
+    JpegErrorManager *manager = reinterpret_cast<JpegErrorManager *>(common->err);
+    (*common->err->format_message)(common, manager->message);
+    longjmp(manager->jump, 1);
+}
+
+bool load_jpeg(Lut &lut, std::string &error) {
+    FILE *file = std::fopen(lut.path.c_str(), "rb");
+    if (!file) {
+        error = "cannot read LUT JPEG: " + lut.path;
         return false;
     }
-    return true;
+
+    jpeg_decompress_struct info;
+    JpegErrorManager manager;
+    manager.message[0] = '\0';
+    info.err = jpeg_std_error(&manager.base);
+    manager.base.error_exit = jpeg_error_exit;
+
+    if (setjmp(manager.jump)) {
+        jpeg_destroy_decompress(&info);
+        std::fclose(file);
+        error = "cannot decode LUT JPEG '" + lut.path + "': " + manager.message;
+        return false;
+    }
+
+    jpeg_create_decompress(&info);
+    jpeg_stdio_src(&info, file);
+    jpeg_read_header(&info, TRUE);
+    info.out_color_space = JCS_RGB;
+    jpeg_start_decompress(&info);
+
+    lut.width = static_cast<int>(info.output_width);
+    lut.height = static_cast<int>(info.output_height);
+    const size_t width = static_cast<size_t>(lut.width);
+    const size_t height = static_cast<size_t>(lut.height);
+    std::vector<unsigned char> pixels(width * height * 4u);
+    std::vector<unsigned char> row(width * 3u);
+
+    while (info.output_scanline < info.output_height) {
+        JSAMPROW row_pointer = row.data();
+        jpeg_read_scanlines(&info, &row_pointer, 1);
+        const size_t y = static_cast<size_t>(info.output_scanline - 1u);
+        unsigned char *destination = pixels.data() + y * width * 4u;
+        for (size_t x = 0; x < width; ++x) {
+            destination[x * 4u + 0u] = row[x * 3u + 0u];
+            destination[x * 4u + 1u] = row[x * 3u + 1u];
+            destination[x * 4u + 2u] = row[x * 3u + 2u];
+            destination[x * 4u + 3u] = 255u;
+        }
+    }
+
+    jpeg_finish_decompress(&info);
+    jpeg_destroy_decompress(&info);
+    std::fclose(file);
+    return upload_rgba(lut, pixels, error);
+}
+
+bool load_image(Lut &lut, std::string &error) {
+    if (suffix(lut.path, ".png")) return load_png(lut, error);
+    if (suffix(lut.path, ".jpg") || suffix(lut.path, ".jpeg"))
+        return load_jpeg(lut, error);
+    error = "unsupported shader texture format: " + lut.path;
+    return false;
 }
 }
 
 void ags_lut_clear() {
+    UploadState state;
     for (Lut &lut : g_luts) {
         if (lut.texture) glDeleteTextures(1, &lut.texture);
     }
@@ -190,11 +281,11 @@ bool ags_lut_load_preset(const std::string &preset_path, std::string &error) {
         }
 
         if (lut.path.empty()) {
-            error = "missing LUT path for '" + name + "' in " + preset_path;
+            error = "missing shader texture path for '" + name + "' in " + preset_path;
             ags_lut_clear();
             return false;
         }
-        if (!load_png(lut, error)) {
+        if (!load_image(lut, error)) {
             ags_lut_clear();
             return false;
         }
