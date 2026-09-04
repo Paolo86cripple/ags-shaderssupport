@@ -1,4 +1,4 @@
-#include "shader_pipeline_v4.h"
+#include "shader_pipeline.h"
 
 #include <GL/gl.h>
 #include <SDL2/SDL.h>
@@ -14,7 +14,7 @@ using SwapWindowFn = void (*)(SDL_Window *);
 
 SwapWindowFn g_real_swap = nullptr;
 thread_local bool g_in_swap = false;
-ShaderPipelineV4 g_pipeline;
+ShaderPipeline g_pipeline;
 GLuint g_capture_texture = 0u;
 int g_capture_width = 0;
 int g_capture_height = 0;
