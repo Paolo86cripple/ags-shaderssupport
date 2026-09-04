@@ -18,14 +18,15 @@ set(AGS_SHADER_PIPELINE_SOURCES
     src/lut_manager.cpp
 )
 
-# OpenGL compatibility profiles treat generic attribute 0 specially: querying
-# GL_CURRENT_VERTEX_ATTRIB for index 0 may raise GL_INVALID_OPERATION. Keep the
-# compatibility shim scoped to v4. The second shim delegates to the first and
-# only performs framebuffer readback when AGS_SHADER_DUMP_PASSES_DIR is set.
+# The v4 backend is compiled through three scoped compatibility layers:
+# 1. legacy GLSL/source and attribute compatibility;
+# 2. RetroArch GL2 renderchain semantics/caches (POT FBO backing, UV ratios,
+#    cached uniforms/texture parameters and classic global uniforms);
+# 3. optional pass framebuffer diagnostics.
 set_source_files_properties(
     src/shader_pipeline_v4.cpp
     PROPERTIES
-    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_pass_diagnostics.h"
+    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/retroarch_gl2_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_pass_diagnostics_ra.h"
 )
 
 add_library(ags-shader SHARED
