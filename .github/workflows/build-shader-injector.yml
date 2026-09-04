@@ -144,17 +144,37 @@ jobs:
       - name: Smoke test canonical FeedbackTexture feedback_pass
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-feedback.glslp feedback
 
-      - name: Sweep every pinned Libretro GLSLP preset
+      - name: Verify pinned upstream-invalid 3dfx preset
+        shell: bash
+        run: |
+          set -euo pipefail
+          preset='upstream-glsl-shaders/cel/presets/MMJ_Cel_Shader_3dfx.glslp'
+          stale='upstream-glsl-shaders/3dfx/shaders/3dfx_pass_0.glsl'
+          actual='upstream-glsl-shaders/gpu/shaders/3dfx/3dfx_pass_0.glsl'
+          test -f "$preset"
+          test ! -e "$stale"
+          test -f "$actual"
+          set +e
+          xvfb-run -a ./build/injector/ags-shader-load-test "$preset"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          echo "XFAIL(upstream): ${preset} references removed ../../3dfx/shaders paths; actual files are under gpu/shaders/3dfx"
+
+      - name: Sweep every usable pinned Libretro GLSLP preset
         timeout-minutes: 30
         shell: bash
         run: |
           set -o pipefail
-          count=$(find upstream-glsl-shaders -type f -name '*.glslp' | wc -l)
-          echo "Strict compatibility sweep: ${count} GLSLP presets"
-          test "${count}" -gt 0
+          broken='upstream-glsl-shaders/cel/presets/MMJ_Cel_Shader_3dfx.glslp'
+          total=$(find upstream-glsl-shaders -type f -name '*.glslp' | wc -l)
+          count=$(find upstream-glsl-shaders -type f -name '*.glslp' ! -path "$broken" | wc -l)
+          echo "Strict compatibility sweep: ${count}/${total} usable GLSLP presets (+1 pinned upstream XFAIL)"
+          test "$count" -gt 0
           xvfb-run -a bash -c '
             set -o pipefail
-            find upstream-glsl-shaders -type f -name "*.glslp" -print0 \
+            find upstream-glsl-shaders -type f -name "*.glslp" \
+              ! -path "upstream-glsl-shaders/cel/presets/MMJ_Cel_Shader_3dfx.glslp" -print0 \
               | sort -z \
               | xargs -0 -r -n 64 ./build/injector/ags-shader-load-test
           '
