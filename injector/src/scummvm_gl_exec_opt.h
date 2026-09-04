@@ -32,10 +32,14 @@
 
 /* retroarch_gl2_compat.h is force-included immediately before this file. Its
  * public draw wrapper does the right RetroArch coordinate math, but discovers
- * auxiliary attributes on every draw. Replace only that final draw wrapper;
- * all other RetroArch compatibility entry points remain untouched. */
+ * auxiliary attributes on every draw. Replace that final draw wrapper and the
+ * integer-uniform path; all other RetroArch compatibility entry points remain
+ * untouched. */
 #ifdef glDrawArrays
 #undef glDrawArrays
+#endif
+#ifdef glUniform1i
+#undef glUniform1i
 #endif
 #ifdef glDeleteProgram
 #undef glDeleteProgram
@@ -54,6 +58,12 @@ struct ProgramPlan {
     std::vector<AuxAttribute> attributes;
 };
 
+struct UniformIntValue {
+    GLuint program = 0;
+    GLint location = -1;
+    GLint value = 0;
+};
+
 struct AuxCoordStorage {
     GLfloat values[8];
 };
@@ -63,10 +73,35 @@ inline std::vector<ProgramPlan> &program_plans() {
     return value;
 }
 
+inline std::vector<UniformIntValue> &uniform_int_values() {
+    static std::vector<UniformIntValue> value;
+    return value;
+}
+
 inline ProgramPlan *find_plan(GLuint program) {
     for (ProgramPlan &plan : program_plans())
         if (plan.program == program) return &plan;
     return nullptr;
+}
+
+inline UniformIntValue *find_uniform_int(GLuint program, GLint location) {
+    for (UniformIntValue &entry : uniform_int_values())
+        if (entry.program == program && entry.location == location) return &entry;
+    return nullptr;
+}
+
+inline void remember_uniform_int(GLuint program, GLint location, GLint value) {
+    if (!program || location < 0) return;
+    UniformIntValue *existing = find_uniform_int(program, location);
+    if (existing) {
+        existing->value = value;
+        return;
+    }
+    UniformIntValue fresh;
+    fresh.program = program;
+    fresh.location = location;
+    fresh.value = value;
+    uniform_int_values().push_back(fresh);
 }
 
 inline bool ends_with_texcoord(const char *name) {
@@ -145,6 +180,18 @@ inline ProgramPlan &plan_for(GLuint program) {
     return existing ? *existing : build_plan(program);
 }
 
+inline bool sampler_unit(GLuint program, GLint location, GLint &unit) {
+    UniformIntValue *cached = find_uniform_int(program, location);
+    if (cached) {
+        unit = cached->value;
+        return true;
+    }
+    if (location < 0) return false;
+    ::glGetUniformiv(program, location, &unit);
+    remember_uniform_int(program, location, unit);
+    return true;
+}
+
 inline void texture_ratio(const ProgramPlan &plan,
                           const AuxAttribute &attribute,
                           GLfloat &xamt,
@@ -154,7 +201,7 @@ inline void texture_ratio(const ProgramPlan &plan,
     if (attribute.unit_texcoord || attribute.sampler_location < 0) return;
 
     GLint unit = 0;
-    ::glGetUniformiv(plan.program, attribute.sampler_location, &unit);
+    if (!sampler_unit(plan.program, attribute.sampler_location, unit)) return;
     const GLuint texture = ags_shader_ra_gl2::actual_bound_texture(unit);
     ags_shader_ra_gl2::TextureMeta *meta =
         ags_shader_ra_gl2::find_texture(texture);
@@ -164,6 +211,26 @@ inline void texture_ratio(const ProgramPlan &plan,
            static_cast<GLfloat>(meta->texture_width);
     yamt = static_cast<GLfloat>(meta->image_height) /
            static_cast<GLfloat>(meta->texture_height);
+}
+
+inline void uniform_1i(GLint location, GLint value) {
+    ::glUniform1i(location, value);
+
+    GLint current_program = 0;
+    ::glGetIntegerv(GL_CURRENT_PROGRAM, &current_program);
+    if (current_program <= 0) return;
+
+    const GLuint program = static_cast<GLuint>(current_program);
+    remember_uniform_int(program, location, value);
+
+    const ags_shader_ra_gl2::UniformMeta *uniform =
+        ags_shader_ra_gl2::find_uniform(program, location);
+    if (!uniform || !ags_shader_ra_gl2::ends_with(uniform->name, "Texture")) return;
+    if (value < 0 || value >= ags_shader_ra_gl2::MaxTrackedTextureUnits) return;
+
+    const GLuint texture = ags_shader_ra_gl2::actual_bound_texture(value);
+    if (texture)
+        ags_shader_ra_gl2::override_frame_texture_sizes(program, uniform->name, texture);
 }
 
 inline void draw_arrays(GLenum mode, GLint first, GLsizei count) {
@@ -230,6 +297,13 @@ inline void delete_program(GLuint program) {
                                }),
                 plans.end());
 
+    std::vector<UniformIntValue> &values = uniform_int_values();
+    values.erase(std::remove_if(values.begin(), values.end(),
+                                [program](const UniformIntValue &item) {
+                                    return item.program == program;
+                                }),
+                 values.end());
+
     std::vector<ags_shader_ra_gl2::UniformMeta> &uniforms =
         ags_shader_ra_gl2::uniform_meta();
     uniforms.erase(std::remove_if(uniforms.begin(), uniforms.end(),
@@ -252,4 +326,5 @@ inline void delete_program(GLuint program) {
 } // namespace ags_shader_scummvm_opt
 
 #define glDrawArrays ags_shader_scummvm_opt::draw_arrays
+#define glUniform1i ags_shader_scummvm_opt::uniform_1i
 #define glDeleteProgram ags_shader_scummvm_opt::delete_program
