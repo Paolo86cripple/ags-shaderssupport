@@ -6,9 +6,11 @@
 
 #include <cctype>
 #include <cstdio>
+#include <fstream>
 #include <setjmp.h>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -183,14 +185,14 @@ bool load_jpeg(Lut &lut, std::string &error) {
         return false;
     }
 
-    jpeg_decompress_struct info;
+    jpeg_decompress_struct info = {};
     JpegErrorManager manager;
     manager.message[0] = '\0';
     info.err = jpeg_std_error(&manager.base);
     manager.base.error_exit = jpeg_error_exit;
 
     if (setjmp(manager.jump)) {
-        jpeg_destroy_decompress(&info);
+        if (info.mem) jpeg_destroy_decompress(&info);
         std::fclose(file);
         error = "cannot decode LUT JPEG '" + lut.path + "': " + manager.message;
         return false;
