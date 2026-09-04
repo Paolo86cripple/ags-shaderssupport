@@ -5,13 +5,13 @@ class ShaderPipelineV3 {
 public:
     enum class ScaleType { Source, Viewport, Absolute };
     enum class WrapMode { ClampToBorder, ClampToEdge, Repeat, MirroredRepeat };
+    static constexpr int MaxPrevPasses = 8;
     ~ShaderPipelineV3();
     bool load(const std::string &path, std::string &error);
     bool loaded() const { return !_passes.empty(); }
     void clear();
     void apply(unsigned input_texture, int input_width, int input_height, int output_width, int output_height);
 private:
-    static constexpr int MaxPrevPasses = 8;
     struct Parameter { std::string name; float value=0.f; };
     struct Pass {
         unsigned program=0;
