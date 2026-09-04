@@ -6,6 +6,7 @@ public:
     enum class ScaleType { Source, Viewport, Absolute };
     enum class WrapMode { ClampToBorder, ClampToEdge, Repeat, MirroredRepeat };
     static constexpr int MaxPrevPasses = 8;
+    static constexpr int MaxFrameHistory = 8;
     ~ShaderPipelineV3();
     bool load(const std::string &path, std::string &error);
     bool loaded() const { return !_passes.empty(); }
@@ -18,6 +19,9 @@ private:
         int texture=-1,input_size=-1,texture_size=-1,output_size=-1,original_size=-1,texel_size=-1,frame_count=-1,frame_direction=-1,time=-1,mvp_matrix=-1;
         int prev_texture[MaxPrevPasses];
         int prev_texture_size[MaxPrevPasses];
+        int feedback_texture=-1,feedback_texture_size=-1;
+        int original_history_texture[MaxFrameHistory];
+        int original_history_texture_size[MaxFrameHistory];
         bool filter_linear=true;
         bool float_framebuffer=false;
         bool srgb_framebuffer=false;
@@ -28,11 +32,14 @@ private:
         std::string alias;
         Pass() {
             for (int i=0;i<MaxPrevPasses;++i) { prev_texture[i]=-1; prev_texture_size[i]=-1; }
+            for (int i=0;i<MaxFrameHistory;++i) { original_history_texture[i]=-1; original_history_texture_size[i]=-1; }
         }
     };
     struct Target { unsigned fbo=0,texture=0; int width=0,height=0,format=0; };
     std::vector<Pass> _passes;
     std::vector<Target> _targets;
+    std::vector<Target> _feedback;
+    std::vector<Target> _original_history;
     std::vector<Parameter> _parameters;
     unsigned long long _frame_count=0;
     bool load_text(const std::string&,std::string&,std::string&) const;
@@ -43,6 +50,7 @@ private:
     bool parse_glslp(const std::string&,std::vector<Pass>&,std::string&);
     bool ensure_fbo_functions(std::string&);
     bool ensure_target(Target&,int,int,bool,bool,std::string&);
+    bool copy_texture_to_target(unsigned,int,int,Target&,std::string&);
     void destroy_target(Target&);
     void set_parameter(const std::string&,float,bool);
     static bool parse_bool(const std::string &s, bool d) {
