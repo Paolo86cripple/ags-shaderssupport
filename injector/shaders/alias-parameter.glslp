@@ -1,0 +1,9 @@
+shaders = 3
+shader0 = identity.glsl
+alias0 = BASE
+shader1 = invert.glsl
+shader2 = alias-parameter.glsl
+filter_linear0 = false
+filter_linear1 = false
+filter_linear2 = false
+Gain = 1.0
