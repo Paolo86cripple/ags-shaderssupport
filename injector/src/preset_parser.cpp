@@ -1,6 +1,7 @@
 #include "preset_parser.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <climits>
 #include <cstdlib>
 #include <fstream>
@@ -162,6 +163,28 @@ bool shader_key(const std::string &key) {
         if (key[i] < '0' || key[i] > '9') return false;
     return true;
 }
+
+bool frame_count_mod_key(const std::string &key) {
+    static const std::string prefix = "frame_count_mod";
+    if (key.compare(0, prefix.size(), prefix) != 0 || key.size() <= prefix.size())
+        return false;
+    for (std::size_t i = prefix.size(); i < key.size(); ++i)
+        if (key[i] < '0' || key[i] > '9') return false;
+    return true;
+}
+
+std::string normalize_uint_prefix(const std::string &value) {
+    const std::string text = trim(value);
+    if (text.empty() || text.front() == '-') return "0";
+
+    errno = 0;
+    char *end = nullptr;
+    const unsigned long parsed = std::strtoul(text.c_str(), &end, 0);
+    if (end == text.c_str() || errno == ERANGE) return "0";
+
+    const unsigned long limited = std::min<unsigned long>(parsed, UINT_MAX);
+    return std::to_string(static_cast<unsigned>(limited));
+}
 }
 
 bool ags_preset_load_flat(const std::string &path,
@@ -207,6 +230,8 @@ bool ags_preset_write_flat(const std::string &source_path,
             std::find(textures.begin(), textures.end(), entry.key) != textures.end();
         if ((shader_key(entry.key) || texture_path) && !value.empty())
             value = ags_preset_resolve_path(entry);
+        else if (frame_count_mod_key(entry.key))
+            value = normalize_uint_prefix(value);
         output << entry.key << " = " << value << '\n';
     }
 
