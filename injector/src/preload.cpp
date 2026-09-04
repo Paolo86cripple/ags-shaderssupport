@@ -22,8 +22,14 @@
 
 namespace {
 using SwapWindowFn = void (*)(SDL_Window *);
+using PollEventFn = int (*)(SDL_Event *);
+using WaitEventFn = int (*)(SDL_Event *);
+using WaitEventTimeoutFn = int (*)(SDL_Event *, int);
 
 SwapWindowFn g_real_swap = nullptr;
+PollEventFn g_real_poll_event = nullptr;
+WaitEventFn g_real_wait_event = nullptr;
+WaitEventTimeoutFn g_real_wait_event_timeout = nullptr;
 thread_local bool g_in_swap = false;
 ShaderPipeline g_pipeline;
 GLuint g_capture_texture = 0u;
@@ -31,6 +37,7 @@ int g_capture_width = 0;
 int g_capture_height = 0;
 bool g_initialized = false;
 bool g_f12_down = false;
+bool g_screenshot_pending = false;
 unsigned long g_screenshot_sequence = 0;
 
 void DebugLog(const char *format, ...) {
@@ -45,6 +52,26 @@ void DebugLog(const char *format, ...) {
 void ResolveRealSwap() {
     if (!g_real_swap)
         g_real_swap = reinterpret_cast<SwapWindowFn>(dlsym(RTLD_NEXT, "SDL_GL_SwapWindow"));
+}
+
+void ResolveRealEventFunctions() {
+    if (!g_real_poll_event)
+        g_real_poll_event = reinterpret_cast<PollEventFn>(dlsym(RTLD_NEXT, "SDL_PollEvent"));
+    if (!g_real_wait_event)
+        g_real_wait_event = reinterpret_cast<WaitEventFn>(dlsym(RTLD_NEXT, "SDL_WaitEvent"));
+    if (!g_real_wait_event_timeout)
+        g_real_wait_event_timeout = reinterpret_cast<WaitEventTimeoutFn>(
+            dlsym(RTLD_NEXT, "SDL_WaitEventTimeout"));
+}
+
+void ObserveEvent(const SDL_Event *event) {
+    if (!event) return;
+    if (event->type == SDL_KEYDOWN &&
+        event->key.keysym.scancode == SDL_SCANCODE_F12 &&
+        event->key.repeat == 0) {
+        g_screenshot_pending = true;
+        DebugLog("AGS shader: F12 screenshot requested from SDL event");
+    }
 }
 
 bool EnsureCaptureTexture(int width, int height) {
@@ -331,6 +358,11 @@ bool ReadFinalBackBuffer(int width,
 }
 
 bool ScreenshotRequested(SDL_Window *window) {
+    if (g_screenshot_pending) {
+        g_screenshot_pending = false;
+        return true;
+    }
+
     const Uint8 *keys = SDL_GetKeyboardState(nullptr);
     const bool focused = !window || SDL_GetKeyboardFocus() == window;
     const bool pressed = focused && keys && keys[SDL_SCANCODE_F12] != 0;
@@ -357,6 +389,30 @@ void SaveScreenshot(int width, int height) {
 
     std::fprintf(stderr, "AGS shader screenshot: %s\n", path.c_str());
 }
+}
+
+extern "C" int SDL_PollEvent(SDL_Event *event) {
+    ResolveRealEventFunctions();
+    if (!g_real_poll_event) return 0;
+    const int result = g_real_poll_event(event);
+    if (result > 0) ObserveEvent(event);
+    return result;
+}
+
+extern "C" int SDL_WaitEvent(SDL_Event *event) {
+    ResolveRealEventFunctions();
+    if (!g_real_wait_event) return 0;
+    const int result = g_real_wait_event(event);
+    if (result > 0) ObserveEvent(event);
+    return result;
+}
+
+extern "C" int SDL_WaitEventTimeout(SDL_Event *event, int timeout) {
+    ResolveRealEventFunctions();
+    if (!g_real_wait_event_timeout) return 0;
+    const int result = g_real_wait_event_timeout(event, timeout);
+    if (result > 0) ObserveEvent(event);
+    return result;
 }
 
 extern "C" void SDL_GL_SwapWindow(SDL_Window *window) {
