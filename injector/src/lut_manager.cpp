@@ -1,11 +1,13 @@
 #include "lut_manager.h"
 
+#include <cstddef>
+#include <cstdio>
+
 #include <GL/gl.h>
 #include <jpeglib.h>
 #include <png.h>
 
 #include <cctype>
-#include <cstdio>
 #include <fstream>
 #include <setjmp.h>
 #include <sstream>
