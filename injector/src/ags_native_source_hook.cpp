@@ -1,10 +1,15 @@
+#define _GNU_SOURCE 1
+
 /*
  * AGS Shader Injector - native AGS OpenGL source discovery
  *
  * The host-side strategy is inspired by ScummVM's OpenGL LibRetroPipeline:
  * shader processing starts from the engine's logical game-resolution target
  * instead of the already-scaled window backbuffer. This implementation is
- * standalone and observes AGS' own OpenGL FBO traffic through SDL_GL_GetProcAddress.
+ * standalone and observes AGS' own OpenGL FBO traffic. Current AGS desktop
+ * builds use GLAD's built-in libGL/glXGetProcAddressARB loader, while other
+ * hosts may obtain entry points through SDL_GL_GetProcAddress; both paths are
+ * covered here.
  *
  * ScummVM - Graphic Adventure Engine
  * ScummVM is the legal property of its developers, whose names are too
@@ -36,14 +41,18 @@
 #endif
 
 namespace {
+using DlsymFn = void *(*)(void *, const char *);
 using GetProcAddressFn = void *(*)(const char *);
+using GlxGetProcAddressFn = void *(*)(const unsigned char *);
 using BindFramebufferFn = void (*)(GLenum, GLuint);
 using FramebufferTexture2DFn = void (*)(GLenum, GLenum, GLenum, GLuint, GLint);
 using ViewportFn = void (*)(GLint, GLint, GLsizei, GLsizei);
 using DeleteFramebuffersFn = void (*)(GLsizei, const GLuint *);
 using DeleteTexturesFn = void (*)(GLsizei, const GLuint *);
 
+DlsymFn g_real_dlsym = nullptr;
 GetProcAddressFn g_real_get_proc = nullptr;
+GlxGetProcAddressFn g_real_glx_get_proc = nullptr;
 BindFramebufferFn g_real_bind_framebuffer = nullptr;
 FramebufferTexture2DFn g_real_framebuffer_texture_2d = nullptr;
 ViewportFn g_real_viewport = nullptr;
@@ -65,10 +74,22 @@ GLuint g_candidate_fbo = 0;
 unsigned long long g_serial = 0;
 bool g_pipeline_active = false;
 
+DlsymFn resolve_real_dlsym() {
+    if (!g_real_dlsym) {
+#if defined(__GLIBC__)
+        g_real_dlsym = reinterpret_cast<DlsymFn>(
+            dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5"));
+#endif
+    }
+    return g_real_dlsym;
+}
+
 void resolve_real_get_proc() {
-    if (!g_real_get_proc)
-        g_real_get_proc = reinterpret_cast<GetProcAddressFn>(
-            dlsym(RTLD_NEXT, "SDL_GL_GetProcAddress"));
+    if (g_real_get_proc) return;
+    DlsymFn real_dlsym = resolve_real_dlsym();
+    if (!real_dlsym) return;
+    g_real_get_proc = reinterpret_cast<GetProcAddressFn>(
+        real_dlsym(RTLD_NEXT, "SDL_GL_GetProcAddress"));
 }
 
 FboState *find_fbo(GLuint fbo) {
@@ -141,9 +162,8 @@ extern "C" void ags_shader_gl_bind_framebuffer(GLenum target, GLuint fbo) {
             state.last_used = ++g_serial;
         }
         else if (previous) {
-            // AGS' OGL renderer finishes its logical/native render target and
-            // then binds the screen framebuffer before drawing that texture.
-            // Remember that final offscreen FBO as the preferred source.
+            // AGS finishes its logical/native render target and binds the real
+            // screen framebuffer before presenting that texture.
             g_candidate_fbo = previous;
         }
     }
@@ -220,9 +240,8 @@ extern "C" void ags_shader_gl_delete_textures(GLsizei count, const GLuint *textu
 }
 
 void *wrapped_proc(const char *name, void *real_proc) {
-    // Preserve SDL/GL loader fallback behavior exactly. If the requested core
-    // spelling is unavailable, return nullptr so callers may retry the EXT/OES
-    // spelling instead of receiving a wrapper with no real implementation.
+    // Preserve loader fallback behavior exactly. Missing core spellings stay
+    // null so GLAD/SDL may retry EXT/OES aliases.
     if (!name || !real_proc) return real_proc;
 
     if (std::strcmp(name, "glBindFramebuffer") == 0 ||
@@ -250,7 +269,34 @@ void *wrapped_proc(const char *name, void *real_proc) {
     }
     return real_proc;
 }
+
+extern "C" void *ags_shader_glx_get_proc_address(const unsigned char *proc) {
+    if (!g_real_glx_get_proc || !proc) return nullptr;
+    void *real_proc = g_real_glx_get_proc(proc);
+    return wrapped_proc(reinterpret_cast<const char *>(proc), real_proc);
+}
 } // namespace
+
+/* GLAD's Linux loader calls dlsym(libGL, "glXGetProcAddressARB") and then uses
+ * that returned resolver for every OpenGL entry point. LD_PRELOAD cannot
+ * override a symbol obtained from an explicit libGL handle by itself, so
+ * interpose dlsym narrowly: all symbols pass through unchanged except the GLX
+ * resolver and the same GL functions we already observe through SDL. */
+extern "C" void *dlsym(void *handle, const char *symbol) {
+    DlsymFn real_dlsym = resolve_real_dlsym();
+    if (!real_dlsym) return nullptr;
+
+    void *real_proc = real_dlsym(handle, symbol);
+    if (!symbol || !real_proc) return real_proc;
+
+    if (std::strcmp(symbol, "glXGetProcAddressARB") == 0 ||
+        std::strcmp(symbol, "glXGetProcAddress") == 0) {
+        g_real_glx_get_proc = reinterpret_cast<GlxGetProcAddressFn>(real_proc);
+        return reinterpret_cast<void *>(&ags_shader_glx_get_proc_address);
+    }
+
+    return wrapped_proc(symbol, real_proc);
+}
 
 extern "C" void *SDL_GL_GetProcAddress(const char *proc) {
     resolve_real_get_proc();
@@ -281,8 +327,6 @@ bool ags_native_source_acquire(int output_width,
     query_texture_size(state->color_texture, texture_width, texture_height);
     if (texture_width <= 0 || texture_height <= 0) return false;
 
-    // A native target may legitimately equal the window size. Accept it for
-    // correctness; the caller can decide whether it brings a performance gain.
     source.texture = state->color_texture;
     source.fbo = state->fbo;
     source.width = state->viewport_width;
