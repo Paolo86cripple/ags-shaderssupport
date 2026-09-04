@@ -32,5 +32,6 @@ private:
                                 int input_height,
                                 unsigned &source_texture,
                                 int &source_width,
-                                int &source_height);
+                                int &source_height,
+                                bool force_exact_copy = false);
 };
