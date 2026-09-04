@@ -1,0 +1,7 @@
+shaders = 2
+shader0 = identity.glsl
+shader1 = retroarch-coords.glsl
+filter_linear0 = false
+filter_linear1 = false
+scale_type0 = source
+scale0 = 1.0
