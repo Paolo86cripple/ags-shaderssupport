@@ -1,4 +1,4 @@
-#include "shader_pipeline_v4.h"
+#include "shader_pipeline.h"
 
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
@@ -8,7 +8,7 @@
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "shader load test: missing preset path\n");
+        std::fprintf(stderr, "shader load test: missing shader/preset path\n");
         return 2;
     }
 
@@ -41,20 +41,37 @@ int main(int argc, char **argv) {
                  version ? version : "unknown",
                  renderer ? renderer : "unknown");
 
-    ShaderPipelineV4 pipeline;
-    std::string error;
-    if (!pipeline.load(argv[1], error)) {
-        std::fprintf(stderr, "shader load test: FAIL: %s\n", error.c_str());
-        SDL_GL_DeleteContext(context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 6;
+    int passed = 0;
+    int failed = 0;
+    ShaderPipeline pipeline;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string error;
+        if (!pipeline.load(argv[i], error)) {
+            ++failed;
+            std::fprintf(stderr,
+                         "shader load test: FAIL '%s': %s\n",
+                         argv[i],
+                         error.c_str());
+        }
+        else {
+            ++passed;
+            std::fprintf(stderr, "shader load test: PASS '%s'\n", argv[i]);
+        }
+        pipeline.clear();
+
+        // A failed shader compile may intentionally leave diagnostic GL errors;
+        // do not let one preset contaminate the next independent load check.
+        while (glGetError() != GL_NO_ERROR) {}
     }
 
-    std::fprintf(stderr, "shader load test: PASS '%s'\n", argv[1]);
-    pipeline.clear();
+    std::fprintf(stderr,
+                 "shader load test: SUMMARY %d passed, %d failed\n",
+                 passed,
+                 failed);
+
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return 0;
+    return failed == 0 ? 0 : 6;
 }
