@@ -1,0 +1,4 @@
+shaders = 1
+shader0 = retroarch-parameter.glsl
+filter_linear0 = false
+Gain = 0.25
