@@ -3,11 +3,11 @@
 #include <GL/gl.h>
 #include <png.h>
 
-#include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -32,12 +32,14 @@ std::string trim(const std::string &s) {
 
 std::string unquote(std::string s) {
     s = trim(s);
-    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') s = s.substr(1, s.size() - 2);
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+        s = s.substr(1, s.size() - 2);
     return s;
 }
 
 std::string lower(std::string s) {
-    for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char &c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
 
@@ -77,6 +79,25 @@ std::vector<std::string> split_semicolon(const std::string &s) {
     return out;
 }
 
+struct UploadState {
+    GLint active_texture = GL_TEXTURE0;
+    GLint unit0_binding = 0;
+    GLint unpack_alignment = 4;
+
+    UploadState() {
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
+        glActiveTexture(GL_TEXTURE0);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &unit0_binding);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_alignment);
+    }
+
+    ~UploadState() {
+        glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_alignment);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(unit0_binding));
+        glActiveTexture(static_cast<GLenum>(active_texture));
+    }
+};
+
 bool load_png(Lut &lut, std::string &error) {
     png_image image;
     image.version = PNG_IMAGE_VERSION;
@@ -85,6 +106,7 @@ bool load_png(Lut &lut, std::string &error) {
         error = "cannot read LUT PNG '" + lut.path + "': " + image.message;
         return false;
     }
+
     image.format = PNG_FORMAT_RGBA;
     std::vector<unsigned char> pixels(PNG_IMAGE_SIZE(image));
     if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr)) {
@@ -92,10 +114,12 @@ bool load_png(Lut &lut, std::string &error) {
         png_image_free(&image);
         return false;
     }
+
     lut.width = static_cast<int>(image.width);
     lut.height = static_cast<int>(image.height);
     png_image_free(&image);
 
+    UploadState state;
     glGenTextures(1, &lut.texture);
     glBindTexture(GL_TEXTURE_2D, lut.texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
@@ -103,7 +127,16 @@ bool load_png(Lut &lut, std::string &error) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, lut.wrap);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, lut.wrap);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lut.width, lut.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA,
+                 lut.width,
+                 lut.height,
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 pixels.data());
+
     if (glGetError() != GL_NO_ERROR) {
         error = "OpenGL failed to upload LUT PNG: " + lut.path;
         glDeleteTextures(1, &lut.texture);
@@ -123,15 +156,16 @@ void ags_lut_clear() {
 
 bool ags_lut_load_preset(const std::string &preset_path, std::string &error) {
     ags_lut_clear();
+
     std::ifstream file(preset_path.c_str(), std::ios::binary);
     if (!file) {
         error = "cannot read shader preset: " + preset_path;
         return false;
     }
 
-    std::vector<std::pair<std::string,std::string>> entries;
-    std::string line;
+    std::vector<std::pair<std::string, std::string>> entries;
     std::vector<std::string> names;
+    std::string line;
     while (std::getline(file, line)) {
         line = trim(line);
         if (line.empty() || line.front() == '#') continue;
@@ -144,15 +178,17 @@ bool ags_lut_load_preset(const std::string &preset_path, std::string &error) {
     }
 
     if (names.empty()) return true;
+
     const std::string dir = parent_dir(preset_path);
     for (const std::string &name : names) {
         Lut lut;
         lut.name = name;
-        for (const auto &kv : entries) {
-            if (kv.first == name) lut.path = join_path(dir, kv.second);
-            else if (kv.first == name + "_linear") lut.linear = parse_bool(kv.second, true);
-            else if (kv.first == name + "_wrap_mode") lut.wrap = parse_wrap(kv.second);
+        for (const auto &entry : entries) {
+            if (entry.first == name) lut.path = join_path(dir, entry.second);
+            else if (entry.first == name + "_linear") lut.linear = parse_bool(entry.second, true);
+            else if (entry.first == name + "_wrap_mode") lut.wrap = parse_wrap(entry.second);
         }
+
         if (lut.path.empty()) {
             error = "missing LUT path for '" + name + "' in " + preset_path;
             ags_lut_clear();
@@ -171,6 +207,7 @@ int ags_lut_bind(unsigned program, int first_unit, int max_units) {
     int unit = first_unit;
     for (const Lut &lut : g_luts) {
         if (unit >= max_units) break;
+
         GLint sampler = glGetUniformLocation(program, lut.name.c_str());
         if (sampler < 0) sampler = glGetUniformLocation(program, (lut.name + "Texture").c_str());
         GLint size_loc = glGetUniformLocation(program, (lut.name + "Size").c_str());
@@ -184,7 +221,8 @@ int ags_lut_bind(unsigned program, int first_unit, int max_units) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, lut.wrap);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, lut.wrap);
         if (sampler >= 0) glUniform1i(sampler, unit);
-        if (size_loc >= 0) glUniform2f(size_loc, static_cast<float>(lut.width), static_cast<float>(lut.height));
+        if (size_loc >= 0)
+            glUniform2f(size_loc, static_cast<float>(lut.width), static_cast<float>(lut.height));
         ++unit;
     }
     return unit;
