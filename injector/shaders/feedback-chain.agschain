@@ -1,0 +1,3 @@
+# AGS shader chain v1
+pass=invert.glsl
+pass=feedback-read.glsl
