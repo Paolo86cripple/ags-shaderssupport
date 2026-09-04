@@ -4,6 +4,8 @@
 #include <cstdio>
 
 #include <GL/gl.h>
+#include <GL/glext.h>
+#include <SDL2/SDL.h>
 #include <jpeglib.h>
 #include <png.h>
 
@@ -16,6 +18,10 @@
 #include <vector>
 
 namespace {
+using GenerateMipmap = void (*)(GLenum);
+GenerateMipmap g_generate_mipmap = nullptr;
+bool g_mipmap_resolved = false;
+
 struct Lut {
     std::string name;
     std::string path;
@@ -23,7 +29,8 @@ struct Lut {
     int width = 0;
     int height = 0;
     bool linear = true;
-    GLenum wrap = GL_CLAMP_TO_EDGE;
+    bool mipmap = false;
+    GLenum wrap = GL_CLAMP_TO_BORDER;
 };
 
 std::vector<Lut> g_luts;
@@ -67,10 +74,10 @@ bool parse_bool(const std::string &v, bool d) {
 
 GLenum parse_wrap(const std::string &v) {
     const std::string s = lower(unquote(v));
+    if (s == "clamp_to_edge") return GL_CLAMP_TO_EDGE;
     if (s == "repeat") return GL_REPEAT;
     if (s == "mirrored_repeat") return GL_MIRRORED_REPEAT;
-    if (s == "clamp_to_border") return GL_CLAMP_TO_BORDER;
-    return GL_CLAMP_TO_EDGE;
+    return GL_CLAMP_TO_BORDER;
 }
 
 std::vector<std::string> split_semicolon(const std::string &s) {
@@ -88,6 +95,19 @@ bool suffix(const std::string &path, const char *extension) {
     const std::string p = lower(path);
     const std::string e = lower(extension);
     return p.size() >= e.size() && p.compare(p.size() - e.size(), e.size(), e) == 0;
+}
+
+void resolve_mipmap() {
+    if (g_mipmap_resolved) return;
+    g_mipmap_resolved = true;
+    g_generate_mipmap = reinterpret_cast<GenerateMipmap>(SDL_GL_GetProcAddress("glGenerateMipmap"));
+    if (!g_generate_mipmap)
+        g_generate_mipmap = reinterpret_cast<GenerateMipmap>(SDL_GL_GetProcAddress("glGenerateMipmapEXT"));
+}
+
+GLint min_filter(const Lut &lut) {
+    if (!lut.mipmap) return lut.linear ? GL_LINEAR : GL_NEAREST;
+    return lut.linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST;
 }
 
 struct UploadState {
@@ -121,7 +141,7 @@ bool upload_rgba(Lut &lut,
     UploadState state;
     glGenTextures(1, &lut.texture);
     glBindTexture(GL_TEXTURE_2D, lut.texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter(lut));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, lut.wrap);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, lut.wrap);
@@ -135,6 +155,17 @@ bool upload_rgba(Lut &lut,
                  GL_RGBA,
                  GL_UNSIGNED_BYTE,
                  pixels.data());
+
+    if (lut.mipmap) {
+        resolve_mipmap();
+        if (!g_generate_mipmap) {
+            error = "OpenGL mipmap generation is unavailable for shader texture: " + lut.path;
+            glDeleteTextures(1, &lut.texture);
+            lut.texture = 0;
+            return false;
+        }
+        g_generate_mipmap(GL_TEXTURE_2D);
+    }
 
     if (glGetError() != GL_NO_ERROR) {
         error = "OpenGL failed to upload shader texture: " + lut.path;
@@ -281,6 +312,7 @@ bool ags_lut_load_preset(const std::string &preset_path, std::string &error) {
         for (const auto &entry : entries) {
             if (entry.first == name) lut.path = join_path(dir, entry.second);
             else if (entry.first == name + "_linear") lut.linear = parse_bool(entry.second, true);
+            else if (entry.first == name + "_mipmap") lut.mipmap = parse_bool(entry.second, false);
             else if (entry.first == name + "_wrap_mode") lut.wrap = parse_wrap(entry.second);
         }
 
@@ -311,7 +343,7 @@ int ags_lut_bind(unsigned program, int first_unit, int max_units) {
 
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D, lut.texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter(lut));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lut.linear ? GL_LINEAR : GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, lut.wrap);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, lut.wrap);
