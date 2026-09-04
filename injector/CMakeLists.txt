@@ -18,15 +18,17 @@ set(AGS_SHADER_PIPELINE_SOURCES
     src/lut_manager.cpp
 )
 
-# The v4 backend is compiled through three scoped compatibility layers:
+# The v4 backend is compiled through four scoped compatibility/execution layers:
 # 1. legacy GLSL/source and attribute compatibility;
 # 2. RetroArch GL2 renderchain semantics/caches (POT FBO backing, UV ratios,
 #    cached uniforms/texture parameters and classic global uniforms);
-# 3. optional pass framebuffer diagnostics.
+# 3. ScummVM-inspired static execution plans, moving auxiliary attribute/sampler
+#    discovery out of the per-pass/per-frame render loop;
+# 4. optional pass framebuffer diagnostics.
 set_source_files_properties(
     src/shader_pipeline_v4.cpp
     PROPERTIES
-    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/retroarch_gl2_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_pass_diagnostics_ra.h"
+    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/retroarch_gl2_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/scummvm_gl_exec_opt.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_pass_diagnostics_ra.h"
 )
 
 add_library(ags-shader SHARED
