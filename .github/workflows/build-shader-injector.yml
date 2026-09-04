@@ -100,6 +100,12 @@ jobs:
           EOF
           xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-lut/test.glslp
 
+      - name: Smoke test OriginalHistory temporal input
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/original-history.glsl history
+
+      - name: Smoke test PassFeedback temporal output
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/feedback-chain.agschain feedback
+
       - name: Prepare per-game add-on
         run: |
           mkdir -p dist/ags-shader/shaders
