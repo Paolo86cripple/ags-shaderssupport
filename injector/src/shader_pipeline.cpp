@@ -1,4 +1,5 @@
 #include "shader_pipeline.h"
+#include "ags_native_source_hook.h"
 #include "preset_parser.h"
 
 #include <GL/gl.h>
@@ -182,20 +183,29 @@ bool ShaderPipeline::prepare_source_texture(unsigned input_texture,
                                             int input_height,
                                             unsigned &source_texture,
                                             int &source_width,
-                                            int &source_height) {
+                                            int &source_height,
+                                            bool force_exact_copy) {
     source_texture = input_texture;
     source_width = input_width;
     source_height = input_height;
 
     int requested_width = 0;
     int requested_height = 0;
-    if (!parse_source_size(requested_width, requested_height)) return true;
-    if (requested_width == input_width && requested_height == input_height) return true;
+    const bool explicit_size = parse_source_size(requested_width, requested_height);
+    if (!explicit_size) {
+        if (!force_exact_copy) return true;
+        requested_width = input_width;
+        requested_height = input_height;
+    }
+
+    if (!force_exact_copy &&
+        requested_width == input_width && requested_height == input_height)
+        return true;
 
     if (!resolve_blit_functions()) {
         if (debug_enabled())
             std::fprintf(stderr,
-                         "AGS shader: GPU source resample unavailable (framebuffer blit functions missing)\n");
+                         "AGS shader: GPU source preparation unavailable (framebuffer blit functions missing)\n");
         return false;
     }
 
@@ -278,7 +288,7 @@ bool ShaderPipeline::prepare_source_texture(unsigned input_texture,
     if (!ok) {
         if (debug_enabled())
             std::fprintf(stderr,
-                         "AGS shader: GPU source resample failed; using original %dx%d source\n",
+                         "AGS shader: GPU source preparation failed; using original %dx%d source\n",
                          input_width,
                          input_height);
         return false;
@@ -305,34 +315,78 @@ void ShaderPipeline::apply(unsigned input_texture,
 #endif
     }
 
-    unsigned source_texture = input_texture;
-    int source_width = input_width;
-    int source_height = input_height;
-    const bool resampled = prepare_source_texture(input_texture,
-                                                  input_width,
-                                                  input_height,
-                                                  source_texture,
-                                                  source_width,
-                                                  source_height);
+    unsigned base_texture = input_texture;
+    int base_width = input_width;
+    int base_height = input_height;
+    bool force_exact_copy = false;
+
+    AgsNativeSource native_source;
+    const bool using_native_source =
+        ags_native_source_acquire(output_width, output_height, native_source);
+    if (using_native_source) {
+        base_texture = native_source.texture;
+        base_width = native_source.width;
+        base_height = native_source.height;
+        force_exact_copy = native_source.texture_width != native_source.width ||
+                           native_source.texture_height != native_source.height;
+
+        static unsigned last_native_texture = 0;
+        static int last_native_width = -1;
+        static int last_native_height = -1;
+        if (debug_enabled() &&
+            (last_native_texture != native_source.texture ||
+             last_native_width != native_source.width ||
+             last_native_height != native_source.height)) {
+            last_native_texture = native_source.texture;
+            last_native_width = native_source.width;
+            last_native_height = native_source.height;
+            std::fprintf(stderr,
+                         "AGS shader: native AGS source fbo=%u texture=%u logical=%dx%d backing=%dx%d -> output=%dx%d%s\n",
+                         native_source.fbo,
+                         native_source.texture,
+                         native_source.width,
+                         native_source.height,
+                         native_source.texture_width,
+                         native_source.texture_height,
+                         output_width,
+                         output_height,
+                         force_exact_copy ? " (GPU crop to logical size)" : "");
+        }
+    }
+
+    // From this point until the pipeline returns, FBO activity belongs to the
+    // injector, not AGS. Keep it out of native-target discovery.
+    ags_native_source_set_pipeline_active(true);
+
+    unsigned source_texture = base_texture;
+    int source_width = base_width;
+    int source_height = base_height;
+    const bool prepared = prepare_source_texture(base_texture,
+                                                 base_width,
+                                                 base_height,
+                                                 source_texture,
+                                                 source_width,
+                                                 source_height,
+                                                 force_exact_copy);
 
     static int last_logged_input_width = -1;
     static int last_logged_input_height = -1;
     static int last_logged_source_width = -1;
     static int last_logged_source_height = -1;
-    if (debug_enabled() && resampled &&
-        (source_width != input_width || source_height != input_height) &&
-        (last_logged_input_width != input_width ||
-         last_logged_input_height != input_height ||
+    if (debug_enabled() && prepared &&
+        (source_width != base_width || source_height != base_height || force_exact_copy) &&
+        (last_logged_input_width != base_width ||
+         last_logged_input_height != base_height ||
          last_logged_source_width != source_width ||
          last_logged_source_height != source_height)) {
-        last_logged_input_width = input_width;
-        last_logged_input_height = input_height;
+        last_logged_input_width = base_width;
+        last_logged_input_height = base_height;
         last_logged_source_width = source_width;
         last_logged_source_height = source_height;
         std::fprintf(stderr,
-                     "AGS shader: hardware source resample %dx%d -> %dx%d (%s)\n",
-                     input_width,
-                     input_height,
+                     "AGS shader: hardware source preparation %dx%d -> %dx%d (%s)\n",
+                     base_width,
+                     base_height,
                      source_width,
                      source_height,
                      source_filter() == GL_LINEAR ? "linear" : "nearest");
@@ -343,4 +397,6 @@ void ShaderPipeline::apply(unsigned input_texture,
                 source_height,
                 output_width,
                 output_height);
+
+    ags_native_source_set_pipeline_active(false);
 }
