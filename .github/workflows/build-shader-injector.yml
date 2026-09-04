@@ -72,6 +72,9 @@ jobs:
           EOF
           xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-glslp-advanced/srgb.glslp
 
+      - name: Smoke test GLSLP aliases and parameters
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/alias-parameter.glslp
+
       - name: Prepare per-game add-on
         run: |
           mkdir -p dist/ags-shader/shaders
