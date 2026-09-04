@@ -53,11 +53,29 @@ jobs:
       - name: Smoke test PARAMETER_UNIFORM preset override
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-parameter.glslp
 
-      - name: Load pinned real ScaleFX rAA AA preset
-        run: xvfb-run -a ./build/injector/ags-shader-load-test 'upstream-glsl-shaders/presets/scalefx+rAA+aa.glslp'
+      - name: Smoke test recursive GLSLP references and overlays
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/reference-main.glslp
 
-      - name: Load pinned real ScaleFX rAA AA fast preset
-        run: xvfb-run -a ./build/injector/ags-shader-load-test 'upstream-glsl-shaders/presets/scalefx+rAA+aa-fast.glslp'
+      - name: Load pinned real ScaleFX rAA AA presets
+        run: |
+          xvfb-run -a ./build/injector/ags-shader-load-test \
+            'upstream-glsl-shaders/presets/scalefx+rAA+aa.glslp' \
+            'upstream-glsl-shaders/presets/scalefx+rAA+aa-fast.glslp'
+
+      - name: Sweep every pinned Libretro GLSLP preset
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -o pipefail
+          count=$(find upstream-glsl-shaders -type f -name '*.glslp' | wc -l)
+          echo "Strict compatibility sweep: ${count} GLSLP presets"
+          test "${count}" -gt 0
+          xvfb-run -a bash -c '
+            set -o pipefail
+            find upstream-glsl-shaders -type f -name "*.glslp" -print0 \
+              | sort -z \
+              | xargs -0 -r -n 64 ./build/injector/ags-shader-load-test
+          '
 
       - name: Smoke test GLSL preset loader
         run: |
