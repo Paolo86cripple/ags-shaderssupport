@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ pkg-config libsdl2-dev libgl1-mesa-dev xvfb
+          sudo apt-get install -y cmake g++ pkg-config libsdl2-dev libgl1-mesa-dev libpng-dev xvfb
 
       - name: Configure
         run: cmake -S injector -B build/injector -DCMAKE_BUILD_TYPE=Release
@@ -74,6 +74,31 @@ jobs:
 
       - name: Smoke test GLSLP aliases and parameters
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/alias-parameter.glslp
+
+      - name: Smoke test external PNG LUT
+        run: |
+          mkdir -p /tmp/ags-shader-lut
+          cp injector/shaders/lut-test.glsl /tmp/ags-shader-lut/
+          python3 - <<'PY'
+          import struct, zlib
+          def chunk(kind, data):
+              return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+          raw = b'\x00\x20\x40\x80\xff'
+          png = b'\x89PNG\r\n\x1a\n'
+          png += chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0))
+          png += chunk(b'IDAT', zlib.compress(raw))
+          png += chunk(b'IEND', b'')
+          open('/tmp/ags-shader-lut/lut.png', 'wb').write(png)
+          PY
+          cat > /tmp/ags-shader-lut/test.glslp <<'EOF'
+          shaders = 1
+          shader0 = lut-test.glsl
+          textures = "TESTLUT"
+          TESTLUT = "lut.png"
+          TESTLUT_linear = false
+          TESTLUT_wrap_mode = clamp_to_edge
+          EOF
+          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-lut/test.glslp
 
       - name: Prepare per-game add-on
         run: |
