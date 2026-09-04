@@ -20,7 +20,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-/* retroarch_gl2_compat.h is force-included immediately before this file. */
+/* scummvm_gl_exec_opt.h is force-included immediately before this file. */
 #ifdef glDrawArrays
 #undef glDrawArrays
 #endif
@@ -197,7 +197,7 @@ inline void dump_current_framebuffer(unsigned pass_index) {
 }
 
 inline void draw_arrays(GLenum mode, GLint first, GLsizei count) {
-    ags_shader_ra_gl2::draw_arrays(mode, first, count);
+    ags_shader_scummvm_opt::draw_arrays(mode, first, count);
 
     static bool dump_complete = false;
     static unsigned pass_index = 0;
