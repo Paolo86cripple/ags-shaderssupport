@@ -243,15 +243,19 @@ void save_attrib(GLuint index, AttribState &state) {
 }
 
 void restore_attrib(GLuint index, const AttribState &state) {
-    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.buffer));
-    glVertexAttribPointer(index,
-                          state.size,
-                          static_cast<GLenum>(state.type),
-                          static_cast<GLboolean>(state.normalized),
-                          state.stride,
-                          state.pointer);
-    if (state.enabled) glEnableVertexAttribArray(index);
-    else glDisableVertexAttribArray(index);
+    if (state.enabled) {
+        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.buffer));
+        glVertexAttribPointer(index,
+                              state.size,
+                              static_cast<GLenum>(state.type),
+                              static_cast<GLboolean>(state.normalized),
+                              state.stride,
+                              state.pointer);
+        glEnableVertexAttribArray(index);
+    }
+    else {
+        glDisableVertexAttribArray(index);
+    }
     glVertexAttrib4fv(index, state.current);
 }
 
