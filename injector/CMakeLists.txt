@@ -11,7 +11,9 @@ find_package(OpenGL REQUIRED)
 find_package(PNG REQUIRED)
 
 set(AGS_SHADER_PIPELINE_SOURCES
+    src/shader_pipeline.cpp
     src/shader_pipeline_v4.cpp
+    src/preset_parser.cpp
     src/lut_manager.cpp
 )
 
