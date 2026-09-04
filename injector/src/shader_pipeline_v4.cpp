@@ -6,9 +6,12 @@
 #include <SDL2/SDL.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <climits>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -32,6 +35,12 @@ CheckFbo pCheckFbo = nullptr;
 GenerateMipmap pGenerateMipmap = nullptr;
 
 constexpr int MaxSavedTextureUnits = 32;
+
+const char *kCapabilityDefines =
+    "#ifndef PARAMETER_UNIFORM\n#define PARAMETER_UNIFORM\n#endif\n"
+    "#ifndef _HAS_ORIGINALASPECT_UNIFORMS\n#define _HAS_ORIGINALASPECT_UNIFORMS\n#endif\n"
+    "#ifndef _HAS_FRAMETIME_UNIFORMS\n#define _HAS_FRAMETIME_UNIFORMS\n#endif\n"
+    "#ifndef _HAS_SENSOR_UNIFORMS\n#define _HAS_SENSOR_UNIFORMS\n#endif\n";
 
 const char *kVertexBody =
     "uniform mat4 MVPMatrix;\n"
@@ -142,7 +151,7 @@ std::string inject_preamble(const std::string &source,
     std::string preamble;
     if (stage && *stage)
         preamble += std::string("#define ") + stage + "\n";
-    preamble += "#ifndef PARAMETER_UNIFORM\n#define PARAMETER_UNIFORM\n#endif\n";
+    preamble += kCapabilityDefines;
     preamble += alias_defines;
 
     const size_t version = source.find("#version");
@@ -163,9 +172,7 @@ std::string fallback_vertex(const std::string &fragment_source,
         if (end != std::string::npos)
             version = fragment_source.substr(pos, end - pos + 1);
     }
-    return version +
-           "#ifndef PARAMETER_UNIFORM\n#define PARAMETER_UNIFORM\n#endif\n" +
-           alias_defines + kVertexBody;
+    return version + kCapabilityDefines + alias_defines + kVertexBody;
 }
 
 bool resolve_fbo(std::string &error) {
@@ -255,9 +262,21 @@ void restore_attrib(GLuint index, const AttribState &state) {
     glVertexAttrib4fv(index, state.current);
 }
 
+void bind_tex_coord_attrib(GLint location) {
+    if (location < 0) return;
+    glEnableVertexAttribArray(static_cast<GLuint>(location));
+    glVertexAttribPointer(static_cast<GLuint>(location),
+                          2,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(Vertex),
+                          &kQuad[0].u);
+}
+
 ShaderPipelineV4::FrameUniform find_frame_uniform(unsigned program, const std::string &base) {
     ShaderPipelineV4::FrameUniform frame;
     frame.texture = glGetUniformLocation(program, (base + "Texture").c_str());
+    frame.tex_coord = glGetAttribLocation(program, (base + "TexCoord").c_str());
     frame.input_size = glGetUniformLocation(program, (base + "InputSize").c_str());
     frame.texture_size = glGetUniformLocation(program, (base + "TextureSize").c_str());
     return frame;
@@ -266,6 +285,7 @@ ShaderPipelineV4::FrameUniform find_frame_uniform(unsigned program, const std::s
 void merge_frame_uniform(ShaderPipelineV4::FrameUniform &dst,
                          const ShaderPipelineV4::FrameUniform &fallback) {
     if (dst.texture < 0) dst.texture = fallback.texture;
+    if (dst.tex_coord < 0) dst.tex_coord = fallback.tex_coord;
     if (dst.input_size < 0) dst.input_size = fallback.input_size;
     if (dst.texture_size < 0) dst.texture_size = fallback.texture_size;
 }
@@ -285,6 +305,7 @@ void set_frame_uniform(const ShaderPipelineV4::FrameUniform &uniform,
         const int unit = allocator.get(view.texture);
         if (unit >= 0) glUniform1i(uniform.texture, unit);
     }
+    bind_tex_coord_attrib(uniform.tex_coord);
 }
 
 TextureView target_view(const ShaderPipelineV4::Target &target) {
@@ -322,11 +343,23 @@ bool ShaderPipelineV4::parse_bool(const std::string &s, bool d) {
 
 int ShaderPipelineV4::parse_int(const std::string &s, int d) {
     try {
+        const std::string t = trim(s);
         size_t p = 0;
-        const int v = std::stoi(trim(s), &p);
-        return p == trim(s).size() ? v : d;
+        const int v = std::stoi(t, &p);
+        return p == t.size() ? v : d;
     }
     catch (...) { return d; }
+}
+
+unsigned ShaderPipelineV4::parse_uint_prefix(const std::string &s, unsigned d) {
+    const std::string t = trim(s);
+    if (t.empty() || t.front() == '-') return d;
+    errno = 0;
+    char *end = nullptr;
+    const unsigned long value = std::strtoul(t.c_str(), &end, 0);
+    if (end == t.c_str() || errno == ERANGE) return d;
+    if (value > static_cast<unsigned long>(UINT_MAX)) return UINT_MAX;
+    return static_cast<unsigned>(value);
 }
 
 float ShaderPipelineV4::parse_float(const std::string &s, float d) {
@@ -371,6 +404,7 @@ void ShaderPipelineV4::clear() {
     _alias_defines.clear();
     ags_lut_clear();
     _frame_count = 0;
+    _last_frame_ticks = 0;
 }
 
 void ShaderPipelineV4::set_parameter(const std::string &name, float value, bool overwrite) {
@@ -457,6 +491,7 @@ bool ShaderPipelineV4::create_program(const std::string &vertex,
     glBindAttribLocation(program, 1, "TexCoord");
     glBindAttribLocation(program, 2, "COLOR");
     glBindAttribLocation(program, 2, "Color");
+    glBindAttribLocation(program, 3, "LUTTexCoord");
     glBindAttribLocation(program, 0, "aPosition");
     glBindAttribLocation(program, 1, "aTexCoord");
     glLinkProgram(program);
@@ -526,12 +561,23 @@ bool ShaderPipelineV4::add_pass(const std::string &path,
     if (pass.output_size < 0) pass.output_size = glGetUniformLocation(pass.program, "uOutputSize");
     pass.original_size = glGetUniformLocation(pass.program, "OriginalSize");
     if (pass.original_size < 0) pass.original_size = glGetUniformLocation(pass.program, "uOriginalSize");
+    pass.final_viewport_size = glGetUniformLocation(pass.program, "FinalViewportSize");
     pass.texel_size = glGetUniformLocation(pass.program, "uTexelSize");
     pass.frame_count = glGetUniformLocation(pass.program, "FrameCount");
     if (pass.frame_count < 0) pass.frame_count = glGetUniformLocation(pass.program, "uFrameCount");
     pass.frame_direction = glGetUniformLocation(pass.program, "FrameDirection");
-    pass.time = glGetUniformLocation(pass.program, "uTime");
+    pass.frame_time_delta = glGetUniformLocation(pass.program, "FrameTimeDelta");
+    pass.original_fps = glGetUniformLocation(pass.program, "OriginalFPS");
+    pass.rotation = glGetUniformLocation(pass.program, "Rotation");
+    pass.original_aspect = glGetUniformLocation(pass.program, "OriginalAspect");
+    pass.original_aspect_rotated = glGetUniformLocation(pass.program, "OriginalAspectRotated");
+    pass.gyroscope = glGetUniformLocation(pass.program, "Gyroscope");
+    pass.accelerometer = glGetUniformLocation(pass.program, "Accelerometer");
+    pass.accelerometer_rest = glGetUniformLocation(pass.program, "AccelerometerRest");
+    pass.time = glGetUniformLocation(pass.program, "Time");
+    if (pass.time < 0) pass.time = glGetUniformLocation(pass.program, "uTime");
     pass.mvp_matrix = glGetUniformLocation(pass.program, "MVPMatrix");
+    pass.lut_tex_coord = glGetAttribLocation(pass.program, "LUTTexCoord");
 
     pass.orig = find_frame_uniform(pass.program, "Orig");
     pass.feedback = find_frame_uniform(pass.program, "Feedback");
@@ -687,7 +733,7 @@ bool ShaderPipelineV4::parse_glslp(const std::string &path,
                 else if (base == "scale_type_x") entry.pass.scale_type_x = parse_scale_type(value);
                 else if (base == "scale_type_y") entry.pass.scale_type_y = parse_scale_type(value);
                 else if (base == "frame_count_mod")
-                    entry.pass.frame_count_mod = static_cast<unsigned>(std::max(0, parse_int(value, 0)));
+                    entry.pass.frame_count_mod = parse_uint_prefix(value, 0);
                 continue;
             }
         }
@@ -890,6 +936,22 @@ void ShaderPipelineV4::apply(unsigned input_texture,
         return;
     }
 
+    const Uint64 now = SDL_GetPerformanceCounter();
+    const Uint64 frequency = SDL_GetPerformanceFrequency();
+    GLint frame_time_delta_us = 16667;
+    if (_last_frame_ticks && frequency && now > _last_frame_ticks) {
+        const Uint64 elapsed = now - _last_frame_ticks;
+        const Uint64 usec = (elapsed * 1000000ull) / frequency;
+        frame_time_delta_us = static_cast<GLint>(std::min<Uint64>(usec, static_cast<Uint64>(INT_MAX)));
+        if (frame_time_delta_us <= 0) frame_time_delta_us = 1;
+    }
+    _last_frame_ticks = now;
+    const GLfloat original_fps_value = frame_time_delta_us > 0
+        ? 1000000.f / static_cast<float>(frame_time_delta_us)
+        : 60.f;
+    const GLfloat original_aspect_value = static_cast<float>(input_width) /
+                                          static_cast<float>(std::max(input_height, 1));
+
     GLint old_program = 0;
     GLint old_array_buffer = 0;
     GLint old_active_texture = GL_TEXTURE0;
@@ -910,8 +972,12 @@ void ShaderPipelineV4::apply(unsigned input_texture,
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture_bindings[static_cast<size_t>(unit)]);
     }
 
-    AttribState attrib[3];
-    for (GLuint index = 0; index < 3; ++index) save_attrib(index, attrib[index]);
+    GLint max_vertex_attribs = 0;
+    glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &max_vertex_attribs);
+    max_vertex_attribs = std::max(0, max_vertex_attribs);
+    std::vector<AttribState> attrib(static_cast<size_t>(max_vertex_attribs));
+    for (GLint index = 0; index < max_vertex_attribs; ++index)
+        save_attrib(static_cast<GLuint>(index), attrib[static_cast<size_t>(index)]);
 
     const GLboolean blend = glIsEnabled(GL_BLEND);
     const GLboolean depth_test = glIsEnabled(GL_DEPTH_TEST);
@@ -1027,6 +1093,7 @@ void ShaderPipelineV4::apply(unsigned input_texture,
         glUseProgram(pass.program);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, current_texture);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
 
         const GLenum wrap = wrap_gl(pass.wrap_mode);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
@@ -1059,6 +1126,7 @@ void ShaderPipelineV4::apply(unsigned input_texture,
         if (pass.texture_size >= 0) glUniform2f(pass.texture_size, static_cast<float>(in_w), static_cast<float>(in_h));
         if (pass.output_size >= 0) glUniform2f(pass.output_size, static_cast<float>(out_w), static_cast<float>(out_h));
         if (pass.original_size >= 0) glUniform2f(pass.original_size, static_cast<float>(input_width), static_cast<float>(input_height));
+        if (pass.final_viewport_size >= 0) glUniform2f(pass.final_viewport_size, static_cast<float>(output_width), static_cast<float>(output_height));
         if (pass.texel_size >= 0) glUniform2f(pass.texel_size, 1.f / std::max(in_w, 1), 1.f / std::max(in_h, 1));
         if (pass.frame_count >= 0) {
             unsigned long long frame = _frame_count;
@@ -1066,6 +1134,14 @@ void ShaderPipelineV4::apply(unsigned input_texture,
             glUniform1i(pass.frame_count, static_cast<GLint>(frame));
         }
         if (pass.frame_direction >= 0) glUniform1i(pass.frame_direction, 1);
+        if (pass.frame_time_delta >= 0) glUniform1i(pass.frame_time_delta, frame_time_delta_us);
+        if (pass.original_fps >= 0) glUniform1f(pass.original_fps, original_fps_value);
+        if (pass.rotation >= 0) glUniform1i(pass.rotation, 0);
+        if (pass.original_aspect >= 0) glUniform1f(pass.original_aspect, original_aspect_value);
+        if (pass.original_aspect_rotated >= 0) glUniform1f(pass.original_aspect_rotated, original_aspect_value);
+        if (pass.gyroscope >= 0) glUniform3f(pass.gyroscope, 0.f, 0.f, 0.f);
+        if (pass.accelerometer >= 0) glUniform3f(pass.accelerometer, 0.f, 0.f, 0.f);
+        if (pass.accelerometer_rest >= 0) glUniform3f(pass.accelerometer_rest, 0.f, 0.f, 0.f);
         if (pass.time >= 0) glUniform1f(pass.time, static_cast<float>(SDL_GetTicks()) / 1000.f);
         if (pass.mvp_matrix >= 0) glUniformMatrix4fv(pass.mvp_matrix, 1, GL_FALSE, identity);
 
@@ -1123,13 +1199,13 @@ void ShaderPipelineV4::apply(unsigned input_texture,
         allocator.next = ags_lut_bind(pass.program, allocator.next, usable_units);
         glActiveTexture(GL_TEXTURE0);
 
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
         glDisableVertexAttribArray(2);
         glVertexAttrib4f(2, 1.f, 1.f, 1.f, 1.f);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &kQuad[0].x);
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), &kQuad[0].u);
+        bind_tex_coord_attrib(pass.lut_tex_coord);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
         if (!last) current_texture = _targets[i].texture;
@@ -1178,7 +1254,8 @@ void ShaderPipelineV4::apply(unsigned input_texture,
     }
 
     glUseProgram(static_cast<GLuint>(old_program));
-    for (GLuint index = 0; index < 3; ++index) restore_attrib(index, attrib[index]);
+    for (GLint index = 0; index < max_vertex_attribs; ++index)
+        restore_attrib(static_cast<GLuint>(index), attrib[static_cast<size_t>(index)]);
     glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(old_array_buffer));
     pBindFbo(GL_FRAMEBUFFER_EXT, static_cast<GLuint>(old_fbo));
     glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
