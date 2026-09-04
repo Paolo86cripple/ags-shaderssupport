@@ -1,0 +1,10 @@
+shaders = 3
+shader0 = identity.glsl
+shader1 = invert.glsl
+shader2 = retroarch-refs.glsl
+filter_linear0 = false
+filter_linear1 = false
+filter_linear2 = false
+wrap_mode0 = clamp_to_edge
+wrap_mode1 = clamp_to_edge
+wrap_mode2 = clamp_to_edge
