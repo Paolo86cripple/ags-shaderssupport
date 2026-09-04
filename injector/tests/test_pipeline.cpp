@@ -1,4 +1,4 @@
-#include "shader_pipeline_v4.h"
+#include "shader_pipeline.h"
 
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
     StateProbe probe;
     if (state_test) setup_state_probe(probe);
 
-    ShaderPipelineV4 pipeline;
+    ShaderPipeline pipeline;
     std::string error;
     if (!pipeline.load(shader, error)) {
         std::fprintf(stderr, "shader test: load failed: %s\n", error.c_str());
