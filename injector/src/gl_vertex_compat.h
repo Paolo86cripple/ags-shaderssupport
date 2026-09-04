@@ -3,7 +3,9 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
+#include <algorithm>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -40,14 +42,33 @@ inline const char *capability_defines() {
         "#endif\n";
 }
 
+inline std::size_t first_stage_branch(const std::string &source) {
+    const char *markers[] = {
+        "#if defined(VERTEX)",
+        "#if defined (VERTEX)",
+        "#ifdef VERTEX"
+    };
+    std::size_t result = std::string::npos;
+    for (const char *marker : markers) {
+        const std::size_t pos = source.find(marker);
+        if (pos != std::string::npos)
+            result = result == std::string::npos ? pos : std::min(result, pos);
+    }
+    return result;
+}
+
 inline std::string fragment_hlsl_type_aliases(const std::string &source) {
     // Some historical Libretro GLSL ports place their HLSL-style type alias
     // block only inside the VERTEX branch, then use float2/float3/float4 from
-    // the FRAGMENT branch as well. Only opt in when the source itself declares
-    // that convention; ordinary GLSL shaders remain untouched.
+    // the FRAGMENT branch as well. Only opt in for that malformed layout.
+    // Files such as pal-r57shell.glsl declare the aliases globally before the
+    // stage split and must not receive a second definition.
     const bool fragment_stage = source.find("#define FRAGMENT") != std::string::npos;
-    const bool declares_hlsl_types = source.find("#define float2 vec2") != std::string::npos;
-    if (!fragment_stage || !declares_hlsl_types) return {};
+    const std::size_t float2_define = source.find("#define float2 vec2");
+    if (!fragment_stage || float2_define == std::string::npos) return {};
+
+    const std::size_t stage = first_stage_branch(source);
+    if (stage != std::string::npos && float2_define < stage) return {};
 
     return
         "#ifndef float2\n#define float2 vec2\n#endif\n"
@@ -64,6 +85,50 @@ inline std::string fragment_hlsl_type_aliases(const std::string &source) {
         "#ifndef float3x3\n#define float3x3 mat3x3\n#endif\n"
         "#ifndef float4x4\n#define float4x4 mat4x4\n#endif\n"
         "#ifndef float4x2\n#define float4x2 mat4x2\n#endif\n";
+}
+
+inline bool line_has_texture_call(const std::string &line) {
+    return line.find("COMPAT_TEXTURE(") != std::string::npos ||
+           line.find("texture2D(") != std::string::npos ||
+           line.find("texture(") != std::string::npos;
+}
+
+inline std::string repair_vec3_texture_narrowing(const std::string &source,
+                                                  bool &changed) {
+    changed = false;
+    std::istringstream input(source);
+    std::ostringstream output;
+    std::string line;
+    bool first = true;
+
+    while (std::getline(input, line)) {
+        if (!first) output << '\n';
+        first = false;
+
+        // A few old RetroArch ports assign the vec4 returned by a texture
+        // lookup directly to vec3. Old vendor compilers accepted this, Mesa
+        // correctly rejects it. The intended conversion is unambiguous: RGB.
+        // Apply this only to simple vec3 declarations and only as a last-resort
+        // compilation fallback after the original source has already failed.
+        const std::size_t vec3_pos = line.find("vec3 ");
+        const std::size_t equals = line.find('=', vec3_pos == std::string::npos ? 0 : vec3_pos);
+        const std::size_t semicolon = line.rfind(';');
+        const bool already_swizzled = line.find(".rgb", equals) != std::string::npos ||
+                                      line.find(".xyz", equals) != std::string::npos;
+        if (vec3_pos != std::string::npos &&
+            equals != std::string::npos &&
+            semicolon != std::string::npos &&
+            semicolon > equals &&
+            line_has_texture_call(line.substr(equals + 1, semicolon - equals - 1)) &&
+            !already_swizzled) {
+            line.insert(semicolon, ".rgb");
+            changed = true;
+        }
+        output << line;
+    }
+
+    if (!source.empty() && source.back() == '\n') output << '\n';
+    return output.str();
 }
 
 struct ShaderSourceState {
@@ -146,27 +211,51 @@ inline void shader_source(GLuint shader,
     submit_shader_source(shader, with_capabilities(source));
 }
 
-inline void compile_shader(GLuint shader) {
-    ::glCompileShader(shader);
-
+inline bool shader_compiled(GLuint shader) {
     GLint ok = GL_FALSE;
     ::glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok == GL_TRUE) return;
+    return ok == GL_TRUE;
+}
+
+inline void compile_once(GLuint shader, const std::string &source) {
+    submit_shader_source(shader, source);
+    ::glCompileShader(shader);
+}
+
+inline void compile_shader(GLuint shader) {
+    ::glCompileShader(shader);
+    if (shader_compiled(shader)) return;
 
     ShaderSourceState *state = find_shader_source(shader);
-    if (!state || state->explicit_version) return;
+    if (!state) return;
 
-    submit_shader_source(shader,
-                         with_capabilities(state->source, "#version 130\n"));
-    ::glCompileShader(shader);
-    ::glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok == GL_TRUE) return;
+    if (!state->explicit_version) {
+        compile_once(shader, with_capabilities(state->source, "#version 130\n"));
+        if (shader_compiled(shader)) return;
 
-    submit_shader_source(shader,
-                         with_capabilities(state->source,
-                                           "#version 130\n",
-                                           true));
-    ::glCompileShader(shader);
+        compile_once(shader,
+                     with_capabilities(state->source,
+                                       "#version 130\n",
+                                       true));
+        if (shader_compiled(shader)) return;
+    }
+
+    // Final legacy-source repair tier. This is deliberately not applied until
+    // every unmodified compilation strategy has failed.
+    bool repaired = false;
+    const std::string repaired_source = repair_vec3_texture_narrowing(state->source, repaired);
+    if (!repaired) return;
+
+    compile_once(shader, with_capabilities(repaired_source));
+    if (shader_compiled(shader) || state->explicit_version) return;
+
+    compile_once(shader, with_capabilities(repaired_source, "#version 130\n"));
+    if (shader_compiled(shader)) return;
+
+    compile_once(shader,
+                 with_capabilities(repaired_source,
+                                   "#version 130\n",
+                                   true));
 }
 
 inline void delete_shader(GLuint shader) {
