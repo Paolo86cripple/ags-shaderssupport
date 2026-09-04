@@ -14,11 +14,12 @@ public:
 
     struct FrameUniform {
         int texture = -1;
+        int tex_coord = -1;
         int input_size = -1;
         int texture_size = -1;
 
         bool used() const {
-            return texture >= 0 || input_size >= 0 || texture_size >= 0;
+            return texture >= 0 || tex_coord >= 0 || input_size >= 0 || texture_size >= 0;
         }
     };
 
@@ -62,11 +63,21 @@ private:
         int texture_size = -1;
         int output_size = -1;
         int original_size = -1;
+        int final_viewport_size = -1;
         int texel_size = -1;
         int frame_count = -1;
         int frame_direction = -1;
+        int frame_time_delta = -1;
+        int original_fps = -1;
+        int rotation = -1;
+        int original_aspect = -1;
+        int original_aspect_rotated = -1;
+        int gyroscope = -1;
+        int accelerometer = -1;
+        int accelerometer_rest = -1;
         int time = -1;
         int mvp_matrix = -1;
+        int lut_tex_coord = -1;
 
         FrameUniform orig;
         FrameUniform feedback;
@@ -100,6 +111,7 @@ private:
     bool _uses_feedback = false;
     std::string _alias_defines;
     unsigned long long _frame_count = 0;
+    unsigned long long _last_frame_ticks = 0;
 
     bool load_text(const std::string&, std::string&, std::string&) const;
     bool add_pass(const std::string&, const Pass*, std::string&);
@@ -117,5 +129,6 @@ private:
 
     static bool parse_bool(const std::string &s, bool d);
     static int parse_int(const std::string &s, int d);
+    static unsigned parse_uint_prefix(const std::string &s, unsigned d);
     static float parse_float(const std::string &s, float d);
 };
