@@ -62,7 +62,14 @@ inline void shader_source(GLuint shader,
             source += std::string("\n") + capability_defines;
     }
     else {
-        source.insert(0, capability_defines);
+        // Desktop RetroArch GLSL shaders without an explicit #version span
+        // several generations of the GLSL language.  Leaving them at the GL
+        // compiler default (1.10) rejects common libretro idioms such as
+        // texture(), round(), integer modulo/bitwise operators, uint and
+        // matrix/array constructors.  Our AGS injector requires a desktop
+        // compatibility context and can safely use the broadly compatible 1.30
+        // language level while retaining legacy attribute/varying syntax.
+        source.insert(0, std::string("#version 130\n") + capability_defines);
     }
 
     const GLchar *patched = source.c_str();
@@ -110,7 +117,7 @@ inline void bind_texture(GLenum target, GLuint texture) {
                    static_cast<GLfloat>(viewport[3]));
 
     // RetroArch exposes these values for shaders that opt into the capability
-    // macros.  Until AGS timing is wired directly into the injector, use a
+    // macros. Until AGS timing is wired directly into the injector, use a
     // stable 60 Hz fallback rather than leaving the uniforms undefined.
     set_uniform_1i(program, "FrameTimeDelta", 16667);
     set_uniform_1f(program, "OriginalFPS", 60.f);
