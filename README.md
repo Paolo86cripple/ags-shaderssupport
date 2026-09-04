@@ -1,200 +1,91 @@
-# AGS native GLSL runtime-only shader support — phase 1
+# AGS Shader Support
 
-Target: `Paolo86cripple/ags-shaderssupport`.
+Native Linux runtime shader injection for Adventure Game Studio games, with
+classic Libretro/RetroArch GLSL and GLSLP compatibility.
 
-This is deliberately a **runtime-only** feature. No AGS Editor changes are
-needed and the shipped AGS game data does not need to be modified.
+The project is runtime-only: AGS game data does not need to be modified and a
+Windows-distributed AGS game may be run by a native Linux AGS runtime using its
+`.ags` data file. Wine/Proton is not required for the shader injector.
 
-## Files to add
-
-Copy these two files into the AGS source tree:
-
-- `Engine/gfx/ags_shader_pipeline.h`
-- `Engine/gfx/ags_shader_pipeline.cpp`
-
-The files under `shaders/` are sample external shaders and can remain anywhere
-on disk; they are not required to be compiled into the runtime.
-
-## Runtime wiring
-
-### `Engine/ac/gamesetup.h`
-
-Inside `GameConfig`, next to the existing graphics fields, add:
-
-```cpp
-String  ShaderPath;
-```
-
-### `Engine/main/config.cpp`
-
-In the graphics configuration read section, after the existing
-`software_driver` read, add:
-
-```cpp
-setup.ShaderPath = CfgReadString(cfg, "graphics", "shader");
-```
-
-### `Engine/main/main.cpp`
-
-Next to the existing `--gfxfilter` command-line handling, add:
-
-```cpp
-else if ((ags_stricmp(arg, "--shader") == 0) && (argc > ee + 1))
-{
-    cfg["graphics"]["shader"] = argv[++ee];
-}
-```
-
-### `Engine/gfx/ali3dogl.h`
-
-Add:
-
-```cpp
-#include "gfx/ags_shader_pipeline.h"
-```
-
-In the private section of `OGLGraphicsDriver`, add:
-
-```cpp
-void ApplyShaderPipeline();
-std::unique_ptr<AGSShaderPipeline> _shaderPipeline;
-```
-
-### `Engine/gfx/ali3dogl.cpp`
-
-Add:
-
-```cpp
-#include "ac/gamesetup.h"
-#include "gfx/ags_shader_pipeline.h"
-```
-
-At the end of `FirstTimeInit()`, after the existing built-in shader creation:
-
-```cpp
-_shaderPipeline.reset(new AGSShaderPipeline());
-
-if (!usetup.ShaderPath.IsEmpty())
-{
-    String shader_error;
-    if (!_shaderPipeline->Load(usetup.ShaderPath, shader_error))
-    {
-        Debug::Printf(kDbgMsg_Error,
-            "AGS shader pipeline: %s", shader_error.GetCStr());
-        _shaderPipeline->Clear();
-    }
-}
-```
-
-Add this method:
-
-```cpp
-void OGLGraphicsDriver::ApplyShaderPipeline()
-{
-    if (!_shaderPipeline || !_shaderPipeline->IsLoaded() || !_nativeSurface)
-        return;
-
-    OGLTexture *texture = _nativeSurface->GetTexture();
-    if (!texture || texture->_numTiles != 1)
-    {
-        Debug::Printf(kDbgMsg_Warn,
-            "AGS shader pipeline disabled: native surface uses multiple texture tiles.");
-        return;
-    }
-
-    _shaderPipeline->Apply(
-        texture->_tiles[0].texture,
-        _nativeSurface->GetSize(),
-        _screenBackbuffer.Fbo,
-        _screenBackbuffer.SurfSize,
-        _screenBackbuffer.Viewport);
-}
-```
-
-Replace the start of `RenderImpl()` so an active shader forces native rendering
-to the FBO and then post-processes it:
-
-```cpp
-void OGLGraphicsDriver::RenderImpl(bool clearDrawListAfterwards)
-{
-    if (_shaderPipeline && _shaderPipeline->IsLoaded() && _nativeSurface)
-    {
-        const bool old_render_to_texture = _doRenderToTexture;
-        _doRenderToTexture = true;
-
-        RenderToSurface(&_nativeBackbuffer, clearDrawListAfterwards);
-
-        _doRenderToTexture = old_render_to_texture;
-        ApplyShaderPipeline();
-        glFinish();
-        return;
-    }
-
-    // Keep the existing AGS implementation below this block unchanged.
-    ...
-}
-```
-
-In `UnInit()`, before destroying the OpenGL context:
-
-```cpp
-_shaderPipeline.reset();
-```
-
-### `Engine/CMakeLists.txt`
-
-Add to `target_sources(engine PRIVATE ...)`:
-
-```cmake
-gfx/ags_shader_pipeline.cpp
-gfx/ags_shader_pipeline.h
-```
-
-## Usage
-
-Single pass:
-
-```bash
-ags --gfxdriver ogl --shader /path/to/shader.glsl game.exe
-```
-
-Multipass:
-
-```bash
-ags --gfxdriver ogl --shader /path/to/crt-blur.agschain game.exe
-```
-
-Example chain:
+## Current architecture
 
 ```text
-pass=blur-pass.glsl
-pass=crt-simple.glsl
+AGS native Linux runtime
+        |
+        | SDL2 / OpenGL
+        v
+LD_PRELOAD injector
+        |
+        +-- AGS framebuffer capture
+        +-- optional hardware source resample
+        +-- RetroArch-style GL2/GLSL renderchain
+        |     +-- GLSL / GLSLP passes
+        |     +-- aliases and parameters
+        |     +-- LUTs
+        |     +-- history / feedback
+        |     +-- float / sRGB FBOs
+        |     +-- mipmaps / wrap / filtering
+        |     +-- RetroArch FBO image-vs-texture sizing
+        |     +-- cached uniforms / texture state
+        |
+        +-- F12 pixel-perfect framebuffer screenshots
+        +-- optional per-pass framebuffer diagnostics
+        v
+AGS backbuffer / display
 ```
 
-Shader paths inside a chain are relative to the `.agschain` file.
+The active implementation lives under `injector/`.
 
-## Shader interface
+## Libretro GLSL compatibility
 
-The fragment shader can use:
+CI pins a known `libretro/glsl-shaders` revision and strictly validates the
+classic GLSL ecosystem. At the current checkpoint the loader passes every
+usable pinned GLSLP preset and every pinned standalone GLSL source; one preset
+with an obsolete path in the pinned upstream tree is tracked separately as an
+upstream XFAIL.
 
-```glsl
-uniform sampler2D uTexture;
-uniform vec2 uInputSize;
-uniform vec2 uOutputSize;
-uniform vec2 uOriginalSize;
-uniform vec2 uTexelSize;
-uniform float uTime;
-uniform float uFrameCount;
-```
+Compile/load compatibility is only one layer. Real AGS render tests are also
+used to validate framebuffer semantics and performance.
 
-The pipeline uses the AGS runtime's existing OpenGL context (currently
-OpenGL 2.1 / GLSL 1.20), rather than introducing a new renderer.
+## RetroArch-derived renderchain
 
-## Deliberate phase-1 limitations
+The OpenGL/GLSL compatibility layer is being aligned directly with RetroArch's
+GL2 renderchain and GLSL backend. The adapted code preserves upstream copyright
+notices and focuses on the desktop OpenGL behavior needed by AGS, rather than
+copying unrelated RetroArch frontend, menu, console or GLES code.
 
-- GLSL only; no HLSL/SPIR-V yet.
-- Intermediate passes use the final output resolution.
-- The native AGS surface must be represented by one GL texture tile.
-- No RetroArch/libretro dependency.
-- No Editor integration.
-- No changes to the shipped game data are required when using `--shader`.
+Important imported semantics include:
+
+- separate FBO image size and texture backing size;
+- power-of-two backing textures used by the classic GL2 renderchain;
+- matching `InputSize`, `TextureSize` and texture-coordinate ratios;
+- float/sRGB framebuffer behavior;
+- cached uniform lookups and texture state;
+- classic RetroArch global uniforms and frame references.
+
+See `THIRD_PARTY.md` for attribution.
+
+## Performance
+
+RetroArch normally receives a core's native content resolution. AGS may already
+have scaled its content to the desktop backbuffer before the injector sees it.
+For scale-heavy presets such as ScaleFX this can create unnecessarily huge
+intermediate targets.
+
+`AGS_SHADER_SOURCE_SIZE=WxH` performs an optional source resample entirely on
+the GPU before the shader chain. This is intended to converge toward automatic
+use of the AGS game's logical/native resolution.
+
+## Injector documentation
+
+See [`injector/README.md`](injector/README.md) for environment variables,
+screenshots, diagnostics and launch examples.
+
+## License
+
+AGS Shader Support is free software released under the GNU General Public
+License version 3 or later (`GPL-3.0-or-later`). The complete GPLv3 text is in
+`COPYING`.
+
+Portions adapted from RetroArch remain GPL-3.0-or-later and retain attribution
+in source headers and `THIRD_PARTY.md`.
