@@ -28,6 +28,9 @@ jobs:
       - name: Smoke test identity shader
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/identity.glsl
 
+      - name: Smoke test OpenGL state isolation
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/identity.glsl state
+
       - name: Smoke test Libretro GLSL ABI
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/libretro-identity.glsl
 
@@ -36,6 +39,12 @@ jobs:
 
       - name: Smoke test PassPrev texture history
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/passprev-chain.agschain
+
+      - name: Smoke test canonical RetroArch frame references
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-refs.glslp
+
+      - name: Smoke test PARAMETER_UNIFORM preset override
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-parameter.glslp
 
       - name: Smoke test GLSL preset loader
         run: |
@@ -75,7 +84,7 @@ jobs:
       - name: Smoke test GLSLP aliases and parameters
         run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/alias-parameter.glslp
 
-      - name: Smoke test external PNG LUT
+      - name: Smoke test external PNG LUT and load-state isolation
         run: |
           mkdir -p /tmp/ags-shader-lut
           cp injector/shaders/lut-test.glsl /tmp/ags-shader-lut/
@@ -98,13 +107,13 @@ jobs:
           TESTLUT_linear = false
           TESTLUT_wrap_mode = clamp_to_edge
           EOF
-          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-lut/test.glslp
+          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-lut/test.glslp state
 
-      - name: Smoke test OriginalHistory temporal input
-        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/original-history.glsl history
+      - name: Smoke test canonical PrevTexture history
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-prev.glsl prev
 
-      - name: Smoke test PassFeedback temporal output
-        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/feedback-chain.agschain feedback
+      - name: Smoke test canonical FeedbackTexture feedback_pass
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-feedback.glslp feedback
 
       - name: Prepare per-game add-on
         run: |
