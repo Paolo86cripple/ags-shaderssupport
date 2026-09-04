@@ -40,6 +40,32 @@ inline const char *capability_defines() {
         "#endif\n";
 }
 
+inline std::string fragment_hlsl_type_aliases(const std::string &source) {
+    // Some historical Libretro GLSL ports place their HLSL-style type alias
+    // block only inside the VERTEX branch, then use float2/float3/float4 from
+    // the FRAGMENT branch as well. Only opt in when the source itself declares
+    // that convention; ordinary GLSL shaders remain untouched.
+    const bool fragment_stage = source.find("#define FRAGMENT") != std::string::npos;
+    const bool declares_hlsl_types = source.find("#define float2 vec2") != std::string::npos;
+    if (!fragment_stage || !declares_hlsl_types) return {};
+
+    return
+        "#ifndef float2\n#define float2 vec2\n#endif\n"
+        "#ifndef float3\n#define float3 vec3\n#endif\n"
+        "#ifndef float4\n#define float4 vec4\n#endif\n"
+        "#ifndef int2\n#define int2 ivec2\n#endif\n"
+        "#ifndef int3\n#define int3 ivec3\n#endif\n"
+        "#ifndef int4\n#define int4 ivec4\n#endif\n"
+        "#ifndef bool2\n#define bool2 bvec2\n#endif\n"
+        "#ifndef bool3\n#define bool3 bvec3\n#endif\n"
+        "#ifndef bool4\n#define bool4 bvec4\n#endif\n"
+        "#ifndef float2x2\n#define float2x2 mat2x2\n#endif\n"
+        "#ifndef float2x3\n#define float2x3 mat2x3\n#endif\n"
+        "#ifndef float3x3\n#define float3x3 mat3x3\n#endif\n"
+        "#ifndef float4x4\n#define float4x4 mat4x4\n#endif\n"
+        "#ifndef float4x2\n#define float4x2 mat4x2\n#endif\n";
+}
+
 struct ShaderSourceState {
     GLuint shader = 0;
     std::string source;
@@ -58,16 +84,22 @@ inline ShaderSourceState *find_shader_source(GLuint shader) {
     return nullptr;
 }
 
+inline std::string compatibility_defines(const std::string &source) {
+    return std::string(capability_defines()) + fragment_hlsl_type_aliases(source);
+}
+
 inline std::string with_capabilities(const std::string &source,
                                      const char *version_prefix = nullptr,
                                      bool enable_420pack = false) {
     std::string patched = source;
+    const std::string compat = compatibility_defines(source);
     const std::size_t version = patched.find("#version");
     if (version != std::string::npos) {
         const std::size_t end = patched.find('\n', version);
-        std::string insert = capability_defines();
+        std::string insert;
         if (enable_420pack)
             insert += "#extension GL_ARB_shading_language_420pack : enable\n";
+        insert += compat;
         if (end != std::string::npos)
             patched.insert(end + 1, insert);
         else
@@ -79,7 +111,7 @@ inline std::string with_capabilities(const std::string &source,
     if (version_prefix) prefix += version_prefix;
     if (enable_420pack)
         prefix += "#extension GL_ARB_shading_language_420pack : enable\n";
-    prefix += capability_defines();
+    prefix += compat;
     return prefix + patched;
 }
 
@@ -111,8 +143,6 @@ inline void shader_source(GLuint shader,
     state->source = source;
     state->explicit_version = source.find("#version") != std::string::npos;
 
-    // Preserve the shader's legacy language level first. A large part of the
-    // Libretro GLSL collection intentionally relies on pre-1.30 semantics.
     submit_shader_source(shader, with_capabilities(source));
 }
 
@@ -126,24 +156,28 @@ inline void compile_shader(GLuint shader) {
     ShaderSourceState *state = find_shader_source(shader);
     if (!state || state->explicit_version) return;
 
-    // RetroArch's modern desktop GL path uses GLSL 1.30 for versionless
-    // shaders. Retry at that language level only when legacy compilation
-    // failed, keeping genuinely old shaders on their original semantics.
     submit_shader_source(shader,
                          with_capabilities(state->source, "#version 130\n"));
     ::glCompileShader(shader);
     ::glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
     if (ok == GL_TRUE) return;
 
-    // A small number of historical GLSL presets use C-style aggregate
-    // initialization accepted through 420pack on desktop OpenGL. Try the
-    // extension as a final compatibility tier; unsupported drivers simply
-    // leave the shader failed with their normal compiler log.
     submit_shader_source(shader,
                          with_capabilities(state->source,
                                            "#version 130\n",
                                            true));
     ::glCompileShader(shader);
+}
+
+inline void delete_shader(GLuint shader) {
+    std::vector<ShaderSourceState> &states = shader_sources();
+    for (std::vector<ShaderSourceState>::iterator it = states.begin(); it != states.end(); ++it) {
+        if (it->shader == shader) {
+            states.erase(it);
+            break;
+        }
+    }
+    ::glDeleteShader(shader);
 }
 
 inline void set_uniform_1i(GLuint program, const char *name, GLint value) {
@@ -342,5 +376,6 @@ inline void draw_arrays(GLenum mode, GLint first, GLsizei count) {
 #define glVertexAttrib4fv ags_shader_gl_compat::vertex_attrib4fv
 #define glShaderSource ags_shader_gl_compat::shader_source
 #define glCompileShader ags_shader_gl_compat::compile_shader
+#define glDeleteShader ags_shader_gl_compat::delete_shader
 #define glBindTexture ags_shader_gl_compat::bind_texture
 #define glDrawArrays ags_shader_gl_compat::draw_arrays
