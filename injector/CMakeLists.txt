@@ -18,6 +18,15 @@ set(AGS_SHADER_PIPELINE_SOURCES
     src/lut_manager.cpp
 )
 
+# OpenGL compatibility profiles treat generic attribute 0 specially: querying
+# GL_CURRENT_VERTEX_ATTRIB for index 0 may raise GL_INVALID_OPERATION.  Keep the
+# workaround scoped to the v4 implementation instead of altering application GL.
+set_source_files_properties(
+    src/shader_pipeline_v4.cpp
+    PROPERTIES
+    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h"
+)
+
 add_library(ags-shader SHARED
     src/preload.cpp
     ${AGS_SHADER_PIPELINE_SOURCES}
