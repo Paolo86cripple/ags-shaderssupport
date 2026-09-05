@@ -14,6 +14,7 @@ find_package(JPEG REQUIRED)
 set(AGS_SHADER_PIPELINE_SOURCES
     src/shader_pipeline.cpp
     src/shader_pipeline_v4.cpp
+    src/retroarch_source_bridge.cpp
     src/preset_parser.cpp
     src/lut_manager.cpp
 )
@@ -29,6 +30,15 @@ set_source_files_properties(
     src/shader_pipeline_v4.cpp
     PROPERTIES
     COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/retroarch_gl2_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/scummvm_gl_exec_opt.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_pass_diagnostics_ra.h"
+)
+
+# The source bridge must allocate through the same RetroArch GL2 compatibility
+# layer as the v4 render targets so the original frame and pass textures share
+# one logical/backing coordinate space.
+set_source_files_properties(
+    src/retroarch_source_bridge.cpp
+    PROPERTIES
+    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/gl_vertex_compat.h;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/retroarch_gl2_compat.h"
 )
 
 add_library(ags-shader SHARED
