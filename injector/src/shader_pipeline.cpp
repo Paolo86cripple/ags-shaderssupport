@@ -1,6 +1,7 @@
 #include "shader_pipeline.h"
 #include "ags_native_source_hook.h"
 #include "preset_parser.h"
+#include "retroarch_source_bridge.h"
 
 #include <GL/gl.h>
 #include <GL/glext.h>
@@ -130,6 +131,7 @@ const char *gl_string(GLenum name) {
 }
 
 ShaderPipeline::~ShaderPipeline() {
+    ags_ra_source_bridge_release();
     release_source_resampler();
 }
 
@@ -152,10 +154,12 @@ void ShaderPipeline::release_source_resampler() {
 
 void ShaderPipeline::clear() {
     _impl.clear();
+    ags_ra_source_bridge_release();
     release_source_resampler();
 }
 
 bool ShaderPipeline::load(const std::string &path, std::string &error) {
+    ags_ra_source_bridge_release();
     release_source_resampler();
 
     if (!has_glslp_suffix(path)) return _impl.load(path, error);
@@ -390,6 +394,25 @@ void ShaderPipeline::apply(unsigned input_texture,
                      source_width,
                      source_height,
                      source_filter() == GL_LINEAR ? "linear" : "nearest");
+    }
+
+    // RetroArch GL2 renderchains keep the original frame in the same
+    // power-of-two backing coordinate system as intermediate passes. External
+    // AGS textures are exact-sized, which made shaders such as ScaleFX pass 4
+    // reuse a POT-scaled TexCoord against an exact Orig/PassPrev texture and
+    // therefore sample only the lower-left portion of the frame. Copy the
+    // prepared source once on-GPU into a reusable RetroArch-style backing
+    // texture before entering the v4 chain.
+    unsigned bridged_texture = source_texture;
+    int bridged_backing_width = source_width;
+    int bridged_backing_height = source_height;
+    if (ags_ra_source_bridge_prepare(source_texture,
+                                     source_width,
+                                     source_height,
+                                     bridged_texture,
+                                     bridged_backing_width,
+                                     bridged_backing_height)) {
+        source_texture = bridged_texture;
     }
 
     _impl.apply(source_texture,
