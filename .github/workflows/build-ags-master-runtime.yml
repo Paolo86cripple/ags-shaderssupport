@@ -1,0 +1,120 @@
+name: Build AGS Master Runtime
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * *'
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/build-ags-master-runtime.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ags-master-runtime-linux-x86_64
+  cancel-in-progress: true
+
+jobs:
+  build-linux-x86_64:
+    name: AGS master Linux x86_64
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout AGS master
+        uses: actions/checkout@v4
+        with:
+          repository: adventuregamestudio/ags
+          ref: master
+          path: ags-upstream
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Record upstream revision
+        id: ags
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(git -C ags-upstream rev-parse HEAD)
+          short_sha=$(git -C ags-upstream rev-parse --short=12 HEAD)
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "Building adventuregamestudio/ags master @ ${sha}"
+
+      # Keep this dependency set aligned with AGS' own Ubuntu-x86_64 workflow.
+      # CMake's FetchContent remains enabled so AGS' required third-party
+      # libraries are built in the same way as upstream by default.
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential cmake pkg-config git \
+            libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
+            libusb-1.0-0-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev \
+            libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev \
+            fcitx-libs-dev
+
+      - name: Cache AGS FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/ags-master/_deps
+          key: ags-fetchcontent-${{ runner.os }}-x86_64-${{ hashFiles('ags-upstream/CMakeLists.txt', 'ags-upstream/CMake/Fetch*.cmake') }}
+          restore-keys: |
+            ags-fetchcontent-${{ runner.os }}-x86_64-
+
+      - name: Configure AGS master Release engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S ags-upstream -B build/ags-master \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAGS_BUILD_ENGINE=ON \
+            -DAGS_BUILD_TOOLS=OFF \
+            -DAGS_BUILD_COMPILER=OFF \
+            -DAGS_TESTS=OFF \
+            -DAGS_BUILD_STR="master ${{ steps.ags.outputs.sha }}"
+
+      - name: Build AGS engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/ags-master --target ags --parallel 8
+
+      - name: Verify and stage runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x build/ags-master/ags
+          file build/ags-master/ags
+          ldd build/ags-master/ags || true
+
+          mkdir -p dist/ags-master-linux-x86_64
+          install -m 0755 build/ags-master/ags dist/ags-master-linux-x86_64/ags
+
+          cat > dist/ags-master-linux-x86_64/AGS_MASTER_BUILD.txt <<EOF
+          Source repository: https://github.com/adventuregamestudio/ags
+          Branch: master
+          Commit: ${{ steps.ags.outputs.sha }}
+          Commit short: ${{ steps.ags.outputs.short_sha }}
+          Architecture: x86_64
+          Build type: Release
+          Built by: Paolo86cripple/ags-shaderssupport GitHub Actions
+          EOF
+
+          test -x dist/ags-master-linux-x86_64/ags
+
+      - name: Upload AGS master runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: ags-master-linux-x86_64
+          path: dist/ags-master-linux-x86_64
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
