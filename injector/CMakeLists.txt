@@ -39,7 +39,7 @@ add_library(ags-shader SHARED
 target_include_directories(ags-shader PRIVATE src)
 target_link_libraries(ags-shader PRIVATE PkgConfig::SDL2 OpenGL::GL PNG::PNG JPEG::JPEG dl)
 target_compile_options(ags-shader PRIVATE -Wall -Wextra -Wpedantic)
-target_compile_definitions(ags-shader PRIVATE GL_GLEXT_PROTOTYPES=1)
+target_compile_definitions(ags-shader PRIVATE GL_GLEXT_PROTOTYPES=1 AGS_SHADER_PRELOAD_BUILD=1)
 set_target_properties(ags-shader PROPERTIES PREFIX "lib" OUTPUT_NAME "ags-shader")
 
 add_executable(ags-shader-pipeline-test
