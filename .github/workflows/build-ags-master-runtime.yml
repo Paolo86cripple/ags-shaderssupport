@@ -44,16 +44,16 @@ jobs:
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
           echo "Building adventuregamestudio/ags master @ ${sha}"
 
-      # Keep this dependency set aligned with AGS' own Ubuntu-x86_64 workflow.
-      # CMake's FetchContent remains enabled so AGS' required third-party
-      # libraries are built in the same way as upstream by default.
+      # Keep the host-side SDL2 dynamic so LD_PRELOAD can interpose
+      # SDL_GL_SwapWindow and SDL event functions. Other AGS dependencies may
+      # continue to use upstream FetchContent/static linkage.
       - name: Install Linux build dependencies
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -y
           sudo apt-get install -y \
-            build-essential cmake pkg-config git \
+            build-essential cmake pkg-config git libsdl2-dev \
             libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
             libusb-1.0-0-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxfixes-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev \
@@ -79,6 +79,7 @@ jobs:
             -DAGS_BUILD_TOOLS=OFF \
             -DAGS_BUILD_COMPILER=OFF \
             -DAGS_TESTS=OFF \
+            -DAGS_USE_LOCAL_SDL2=ON \
             -DAGS_BUILD_STR="master ${{ steps.ags.outputs.sha }}"
 
       - name: Build AGS engine
@@ -87,13 +88,15 @@ jobs:
           set -euo pipefail
           cmake --build build/ags-master --target ags --parallel 8
 
-      - name: Verify and stage runtime
+      - name: Verify dynamic SDL2 and stage runtime
         shell: bash
         run: |
           set -euo pipefail
           test -x build/ags-master/ags
           file build/ags-master/ags
-          ldd build/ags-master/ags || true
+
+          ldd build/ags-master/ags | tee /tmp/ags-ldd.txt
+          grep -E 'libSDL2[^ ]*\.so' /tmp/ags-ldd.txt
 
           mkdir -p dist/ags-master-linux-x86_64
           install -m 0755 build/ags-master/ags dist/ags-master-linux-x86_64/ags
@@ -105,6 +108,7 @@ jobs:
           Commit short: ${{ steps.ags.outputs.short_sha }}
           Architecture: x86_64
           Build type: Release
+          SDL2 linkage: dynamic (required by ags-shader LD_PRELOAD injector)
           Built by: Paolo86cripple/ags-shaderssupport GitHub Actions
           EOF
 
