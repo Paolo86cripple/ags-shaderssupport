@@ -225,7 +225,7 @@ bool OGLGraphicsDriver::FirstTimeInit()
         return false;
     }
 
-    // Development bootstrap for the native Libretro-compatible shader pipeline.
+    // Development bootstrap for the native librashader pipeline.
     // The launcher will eventually provide this path via the game's profile.
     const char *shader_path = std::getenv("AGS_SHADER_CHAIN");
     if (!shader_path || shader_path[0] == '\0')
@@ -337,6 +337,17 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_DOUBLEBUFFER: %s", SDL_GetError());
 
   SDL_Window *sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  if (!sdl_window && shader_gl33_requested)
+  {
+    Debug::Printf(kDbgMsg_Warn,
+      "OGL: OpenGL 3.3 window creation failed (%s); retrying legacy OpenGL 2.1 without external shaders",
+      SDL_GetError());
+    set_gl_context_version(2, 1);
+    shader_gl33_requested = false;
+    sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+  }
+#endif
   if (!sdl_window)
   {
     Debug::Printf(kDbgMsg_Error, "Error opening window for OpenGL: %s", SDL_GetError());
@@ -357,6 +368,7 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
     sys_window_destroy();
     sdl_window = nullptr;
     set_gl_context_version(2, 1);
+    shader_gl33_requested = false;
 
     sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
     if (!sdl_window)
