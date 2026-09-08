@@ -1,0 +1,250 @@
+name: Apply librashader review fixes
+
+on:
+  push:
+    branches:
+      - feature/librashader-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/librashader-runtime
+          fetch-depth: 0
+
+      - name: Apply reviewed fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Engine/gfx/ags_shader_pipeline.cpp')
+          s = path.read_text()
+
+          s = s.replace('#include <cstring>\n', '')
+
+          old = '''#ifndef GL_READ_FRAMEBUFFER_BINDING\n#define GL_READ_FRAMEBUFFER_BINDING 0x8CAA\n#endif\n'''
+          new = '''#ifndef GL_READ_FRAMEBUFFER_BINDING\n#define GL_READ_FRAMEBUFFER_BINDING 0x8CAA\n#endif\n#ifndef GL_VERTEX_ARRAY_BINDING\n#define GL_VERTEX_ARRAY_BINDING 0x85B5\n#endif\n#ifndef GL_SAMPLER_BINDING\n#define GL_SAMPLER_BINDING 0x8919\n#endif\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''struct _filter_chain_gl;\n\ntypedef _libra_error *libra_error_t;\ntypedef _shader_preset *libra_shader_preset_t;\ntypedef _preset_ctx *libra_preset_ctx_t;\ntypedef _filter_chain_gl *libra_gl_filter_chain_t;\ntypedef const void *(*libra_gl_loader_t)(const char *);\n\nenum LIBRA_PRESET_CTX_RUNTIME\n{\n    LIBRA_PRESET_CTX_RUNTIME_NONE = 0,\n    LIBRA_PRESET_CTX_RUNTIME_GL_CORE = 1\n};\n'''
+          new = '''struct _filter_chain_gl;\nstruct filter_chain_gl_opt_t;\nstruct frame_gl_opt_t;\n\ntypedef _libra_error *libra_error_t;\ntypedef _shader_preset *libra_shader_preset_t;\ntypedef _preset_ctx *libra_preset_ctx_t;\ntypedef _filter_chain_gl *libra_gl_filter_chain_t;\ntypedef const void *(*libra_gl_loader_t)(const char *);\n\n// Exact ABI-2 C representation used by librashader. This is only the host-side\n// FFI contract; librashader itself remains an external, dynamically loaded library.\nenum LIBRA_PRESET_CTX_RUNTIME : uint32_t\n{\n    LIBRA_PRESET_CTX_RUNTIME_NONE = 0,\n    LIBRA_PRESET_CTX_RUNTIME_GL_CORE = 1\n};\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''typedef libra_error_t (*PFN_libra_gl_filter_chain_create)(\n    libra_shader_preset_t *, libra_gl_loader_t, const void *, libra_gl_filter_chain_t *);\ntypedef libra_error_t (*PFN_libra_gl_filter_chain_frame)(\n    libra_gl_filter_chain_t *, size_t, libra_image_gl_t, libra_image_gl_t,\n    const libra_viewport_t *, const float *, const void *);\n'''
+          new = '''typedef libra_error_t (*PFN_libra_gl_filter_chain_create)(\n    libra_shader_preset_t *, libra_gl_loader_t, const filter_chain_gl_opt_t *, libra_gl_filter_chain_t *);\ntypedef libra_error_t (*PFN_libra_gl_filter_chain_frame)(\n    libra_gl_filter_chain_t *, size_t, libra_image_gl_t, libra_image_gl_t,\n    const libra_viewport_t *, const float *, const frame_gl_opt_t *);\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''typedef void (APIENTRY *PFN_AGS_GL_BLIT_FRAMEBUFFER)(\n    GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);\n'''
+          new = '''typedef void (APIENTRY *PFN_AGS_GL_BLIT_FRAMEBUFFER)(\n    GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);\ntypedef void (APIENTRY *PFN_AGS_GL_BIND_VERTEX_ARRAY)(GLuint);\ntypedef void (APIENTRY *PFN_AGS_GL_BIND_SAMPLER)(GLuint, GLuint);\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          start = s.index('bool HasSuffix(')
+          end = s.index('\nbool CurrentOpenGLAtLeast', start)
+          s = s[:start] + s[end+1:]
+
+          old = '''    PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D FramebufferTexture2D = nullptr;\n    PFN_AGS_GL_BLIT_FRAMEBUFFER BlitFramebuffer = nullptr;\n'''
+          new = '''    PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D FramebufferTexture2D = nullptr;\n    PFN_AGS_GL_BLIT_FRAMEBUFFER BlitFramebuffer = nullptr;\n    PFN_AGS_GL_BIND_VERTEX_ARRAY BindVertexArray = nullptr;\n    PFN_AGS_GL_BIND_SAMPLER BindSampler = nullptr;\n\n    struct HostGLState\n    {\n        GLint draw_fbo = 0;\n        GLint read_fbo = 0;\n        GLint read_buffer = 0;\n        GLint current_program = 0;\n        GLint array_buffer = 0;\n        GLint vertex_array = 0;\n        GLint active_texture = GL_TEXTURE0;\n        GLint active_texture_binding = 0;\n        GLint active_sampler = 0;\n        GLint texture0_binding = 0;\n        GLint sampler0 = 0;\n        GLint viewport[4] = {0, 0, 0, 0};\n    };\n\n    HostGLState CaptureHostGLState()\n    {\n        HostGLState state;\n        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &state.draw_fbo);\n        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &state.read_fbo);\n        glGetIntegerv(GL_READ_BUFFER, &state.read_buffer);\n        glGetIntegerv(GL_CURRENT_PROGRAM, &state.current_program);\n        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &state.array_buffer);\n        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state.vertex_array);\n        glGetIntegerv(GL_ACTIVE_TEXTURE, &state.active_texture);\n        glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.active_texture_binding);\n        glGetIntegerv(GL_SAMPLER_BINDING, &state.active_sampler);\n        glGetIntegerv(GL_VIEWPORT, state.viewport);\n\n        if (state.active_texture == GL_TEXTURE0)\n        {\n            state.texture0_binding = state.active_texture_binding;\n            state.sampler0 = state.active_sampler;\n        }\n        else\n        {\n            glActiveTexture(GL_TEXTURE0);\n            glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.texture0_binding);\n            glGetIntegerv(GL_SAMPLER_BINDING, &state.sampler0);\n            glActiveTexture(static_cast<GLenum>(state.active_texture));\n        }\n        return state;\n    }\n\n    void RestoreHostGLState(const HostGLState &state)\n    {\n        BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(state.draw_fbo));\n        BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(state.read_fbo));\n        glReadBuffer(static_cast<GLenum>(state.read_buffer));\n        glUseProgram(static_cast<GLuint>(state.current_program));\n        BindVertexArray(static_cast<GLuint>(state.vertex_array));\n        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.array_buffer));\n\n        glActiveTexture(GL_TEXTURE0);\n        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.texture0_binding));\n        BindSampler(0, static_cast<GLuint>(state.sampler0));\n\n        if (state.active_texture != GL_TEXTURE0)\n        {\n            const GLuint active_unit = static_cast<GLuint>(state.active_texture - GL_TEXTURE0);\n            glActiveTexture(static_cast<GLenum>(state.active_texture));\n            glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.active_texture_binding));\n            BindSampler(active_unit, static_cast<GLuint>(state.active_sampler));\n        }\n        else\n        {\n            glActiveTexture(GL_TEXTURE0);\n        }\n\n        glViewport(state.viewport[0], state.viewport[1],\n                   state.viewport[2], state.viewport[3]);\n    }\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''        LOAD_GL_SYMBOL(FramebufferTexture2D, "glFramebufferTexture2D");\n        LOAD_GL_SYMBOL(BlitFramebuffer, "glBlitFramebuffer");\n#undef LOAD_GL_SYMBOL\n'''
+          new = '''        LOAD_GL_SYMBOL(FramebufferTexture2D, "glFramebufferTexture2D");\n        LOAD_GL_SYMBOL(BlitFramebuffer, "glBlitFramebuffer");\n        LOAD_GL_SYMBOL(BindVertexArray, "glBindVertexArray");\n        LOAD_GL_SYMBOL(BindSampler, "glBindSampler");\n#undef LOAD_GL_SYMBOL\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          start = s.index('    bool OpenLibrary(std::string &error)')
+          end = s.index('\n    void DestroyTargets()', start)
+          new_open = r'''    void ResetLibrarySymbols()
+    {
+        instance_abi_version = nullptr;
+        preset_ctx_create = nullptr;
+        preset_ctx_free = nullptr;
+        preset_ctx_set_runtime = nullptr;
+        preset_create_with_context = nullptr;
+        gl_filter_chain_create = nullptr;
+        gl_filter_chain_frame = nullptr;
+        gl_filter_chain_free = nullptr;
+        error_free = nullptr;
+        error_write = nullptr;
+        error_free_string = nullptr;
+    }
+
+    bool ResolveLibrarySymbols(std::string &error)
+    {
+#define LOAD_LIBRA_SYMBOL(member, symbol) \
+        if (!LoadLibrarySymbol(library, symbol, member)) \
+        { \
+            error = std::string("missing librashader symbol: ") + symbol; \
+            return false; \
+        }
+
+        LOAD_LIBRA_SYMBOL(instance_abi_version, "libra_instance_abi_version");
+        const size_t abi = instance_abi_version();
+        if (abi != kLibrashaderAbi)
+        {
+            error = "unsupported librashader ABI " + std::to_string(abi) +
+                    " (AGS shader backend expects ABI " + std::to_string(kLibrashaderAbi) + ")";
+            return false;
+        }
+
+        LOAD_LIBRA_SYMBOL(preset_ctx_create, "libra_preset_ctx_create");
+        LOAD_LIBRA_SYMBOL(preset_ctx_free, "libra_preset_ctx_free");
+        LOAD_LIBRA_SYMBOL(preset_ctx_set_runtime, "libra_preset_ctx_set_runtime");
+        LOAD_LIBRA_SYMBOL(preset_create_with_context, "libra_preset_create_with_context");
+        LOAD_LIBRA_SYMBOL(gl_filter_chain_create, "libra_gl_filter_chain_create");
+        LOAD_LIBRA_SYMBOL(gl_filter_chain_frame, "libra_gl_filter_chain_frame");
+        LOAD_LIBRA_SYMBOL(gl_filter_chain_free, "libra_gl_filter_chain_free");
+        LOAD_LIBRA_SYMBOL(error_free, "libra_error_free");
+        LOAD_LIBRA_SYMBOL(error_write, "libra_error_write");
+        LOAD_LIBRA_SYMBOL(error_free_string, "libra_error_free_string");
+#undef LOAD_LIBRA_SYMBOL
+        return true;
+    }
+
+    bool OpenLibrary(std::string &error)
+    {
+        if (library)
+            return true;
+
+        // Prefer the canonical ABI-2 SONAME. The unversioned symlink may point
+        // to a newer incompatible ABI after a host upgrade; in that case keep
+        // searching for an installed ABI-2 library instead of failing early.
+        const char *candidates[] = {
+            "librashader.so.2",
+            "librashader.so"
+        };
+
+        std::string attempts;
+        for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i)
+        {
+            ResetLibrarySymbols();
+            dlerror();
+            library = dlopen(candidates[i], RTLD_NOW | RTLD_LOCAL);
+            if (!library)
+            {
+                const char *dl_error = dlerror();
+                if (!attempts.empty())
+                    attempts += "; ";
+                attempts += candidates[i];
+                attempts += ": ";
+                attempts += (dl_error && dl_error[0]) ? dl_error : "not found";
+                continue;
+            }
+
+            std::string candidate_error;
+            if (ResolveLibrarySymbols(candidate_error))
+                return true;
+
+            if (!attempts.empty())
+                attempts += "; ";
+            attempts += candidates[i];
+            attempts += ": ";
+            attempts += candidate_error;
+            dlclose(library);
+            library = nullptr;
+        }
+
+        ResetLibrarySymbols();
+        error = "cannot load compatible librashader ABI 2";
+        if (!attempts.empty())
+        {
+            error += " (";
+            error += attempts;
+            error += ")";
+        }
+        return false;
+    }
+'''
+          s = s[:start] + new_open + s[end:]
+
+          old = '''    void CloseLibrary()\n    {\n        if (library)\n            dlclose(library);\n        library = nullptr;\n    }\n'''
+          new = '''    void CloseLibrary()\n    {\n        if (library)\n            dlclose(library);\n        library = nullptr;\n        ResetLibrarySymbols();\n    }\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''    if (!HasSuffix(path, ".slangp"))\n    {\n        error = "librashader backend expects a RetroArch .slangp preset";\n        return false;\n    }\n\n'''
+          assert old in s
+          s = s.replace(old, '', 1)
+
+          old = '''    GLint old_draw_fbo = 0;\n    GLint old_read_fbo = 0;\n    GLint old_read_buffer = 0;\n    GLint old_active_texture = GL_TEXTURE0;\n    GLint old_texture = 0;\n    GLint old_viewport[4] = {0, 0, 0, 0};\n\n    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw_fbo);\n    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fbo);\n    glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);\n    glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);\n    glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);\n    glGetIntegerv(GL_VIEWPORT, old_viewport);\n\n    std::string target_error;\n'''
+          new = '''    const Impl::HostGLState host_state = _impl->CaptureHostGLState();\n    glActiveTexture(GL_TEXTURE0);\n\n    std::string target_error;\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''        _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(old_draw_fbo));\n        _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(old_read_fbo));\n        glReadBuffer(static_cast<GLenum>(old_read_buffer));\n        glActiveTexture(static_cast<GLenum>(old_active_texture));\n        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(old_texture));\n        glViewport(old_viewport[0], old_viewport[1],\n                   old_viewport[2], old_viewport[3]);\n        return;\n'''
+          new = '''        _impl->RestoreHostGLState(host_state);\n        return;\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          s = s.replace('static_cast<GLuint>(old_read_fbo)', 'static_cast<GLuint>(host_state.read_fbo)')
+          s = s.replace('static_cast<GLenum>(old_read_buffer)', 'static_cast<GLenum>(host_state.read_buffer)')
+          s = s.replace('static_cast<GLuint>(old_draw_fbo)', 'static_cast<GLuint>(host_state.draw_fbo)')
+
+          old = '''    _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(host_state.draw_fbo));\n    _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(host_state.read_fbo));\n    glReadBuffer(static_cast<GLenum>(host_state.read_buffer));\n    glActiveTexture(static_cast<GLenum>(old_active_texture));\n    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(old_texture));\n    glViewport(old_viewport[0], old_viewport[1],\n               old_viewport[2], old_viewport[3]);\n'''
+          new = '''    _impl->RestoreHostGLState(host_state);\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          path.write_text(s)
+
+          readme = Path('Engine/gfx/README-SHADERS.md')
+          r = readme.read_text()
+          r = r.replace(
+              '`AGS_SHADER_CHAIN` takes precedence.\n\nThe engine dynamically loads `librashader.so` at runtime and currently expects librashader C ABI 2. The library is not linked into AGS and is not required when no external shader preset is selected.\n',
+              '`AGS_SHADER_CHAIN` takes precedence. AGS passes the selected preset path directly to librashader; preset parsing, validation, compilation, multipass behavior, LUTs, history/feedback and shader parameters are librashader responsibilities.\n\nThe engine dynamically loads the host-installed librashader C ABI 2 at runtime. It prefers the canonical `librashader.so.2` SONAME and then accepts the unversioned `librashader.so` only when it reports ABI 2. librashader is not linked or bundled into AGS, so ABI-compatible host/package-manager updates are picked up without rebuilding AGS. If the host installs only an incompatible future ABI, AGS continues without the external shader pipeline.\n')
+          r = r.replace(
+              'The previous custom `.glslp`, `.agschain` and raw-GLSL parser/compiler were development scaffolding. The librashader backend intentionally replaces them with standard `.slangp` presets so AGS does not maintain its own RetroArch preset implementation.\n',
+              'The previous custom `.glslp`, `.agschain` and raw-GLSL parser/compiler were development scaffolding. The librashader backend removes that shading logic from AGS entirely. The launcher may normally select `.slangp` presets, but the engine itself does not enforce a shader file extension: it delegates format support and validation to the installed librashader.\n')
+          readme.write_text(r)
+
+          wf = Path('.github/workflows/librashader-runtime-smoke.yml')
+          w = wf.read_text()
+          old_trigger = '''on:\n  push:\n    branches:\n      - feature/librashader-runtime\n  workflow_dispatch:\n'''
+          new_trigger = '''on:\n  pull_request:\n    paths:\n      - 'Engine/gfx/ags_shader_pipeline.cpp'\n      - 'Engine/gfx/ags_shader_pipeline.h'\n      - 'Engine/gfx/ali3dogl.cpp'\n      - 'Engine/gfx/README-SHADERS.md'\n      - 'Engine/CMakeLists.txt'\n      - '.github/workflows/librashader-runtime-smoke.yml'\n  push:\n    branches:\n      - master\n      - feature/librashader-runtime\n  workflow_dispatch:\n'''
+          assert old_trigger in w
+          w = w.replace(old_trigger, new_trigger, 1)
+
+          old_stage = '''          grep -F 'shader0 = stock.slang' smoke-shader/bilinear.slangp\n          grep -F '#version 450' smoke-shader/stock.slang\n'''
+          new_stage = '''          grep -F 'shader0 = stock.slang' smoke-shader/bilinear.slangp\n          grep -F '#version 450' smoke-shader/stock.slang\n          cat > smoke-shader/two-pass.slangp <<'EOF'\n          shaders = 2\n          shader0 = stock.slang\n          filter_linear0 = false\n          shader1 = stock.slang\n          filter_linear1 = true\n          EOF\n'''
+          assert old_stage in w
+          w = w.replace(old_stage, new_stage, 1)
+
+          marker = '''      - name: Run AGS auto-test through librashader\n'''
+          assert marker in w
+          no_shader = '''      - name: Run AGS auto-test without external shader\n        shell: bash\n        run: |\n          set -o pipefail\n          find . -type f -name 'agstest.tap' -delete\n          mkdir -p runtime-home-no-shader runtime-user-no-shader runtime-xdg-no-shader\n          chmod 700 runtime-xdg-no-shader\n          export HOME="$PWD/runtime-home-no-shader"\n          export XDG_RUNTIME_DIR="$PWD/runtime-xdg-no-shader"\n          export SDL_AUDIODRIVER=dummy\n          export LIBGL_ALWAYS_SOFTWARE=1\n          unset AGS_SHADER_CHAIN AGS_SHADER\n\n          timeout 180s xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \\\n            ./build/ags \\\n              --no-message-box \\\n              --windowed \\\n              --gfxdriver ogl \\\n              --log-stdout=all:info \\\n              --user-data-dir "$PWD/runtime-user-no-shader" \\\n              "$GAME_FILE" 2>&1 | tee runtime-no-shader.log\n\n          if grep -F 'OGL: external shader requested' runtime-no-shader.log; then\n            echo 'no-shader run unexpectedly requested the external shader context' >&2\n            exit 1\n          fi\n          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"\n          test -n "$TAP_FILE"\n          test -s "$TAP_FILE"\n\n'''
+          w = w.replace(marker, no_shader + marker, 1)
+
+          upload_marker = '''      - name: Upload smoke diagnostics\n'''
+          assert upload_marker in w
+          extra = '''      - name: Run multipass preset through librashader\n        shell: bash\n        run: |\n          set -o pipefail\n          find . -type f -name 'agstest.tap' -delete\n          mkdir -p runtime-home-multipass runtime-user-multipass runtime-xdg-multipass\n          chmod 700 runtime-xdg-multipass\n          export HOME="$PWD/runtime-home-multipass"\n          export XDG_RUNTIME_DIR="$PWD/runtime-xdg-multipass"\n          export SDL_AUDIODRIVER=dummy\n          export LIBGL_ALWAYS_SOFTWARE=1\n          export LD_LIBRARY_PATH="/tmp/librashader/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\n          export AGS_SHADER_CHAIN="$PWD/smoke-shader/two-pass.slangp"\n\n          timeout 180s xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \\\n            ./build/ags \\\n              --no-message-box \\\n              --windowed \\\n              --gfxdriver ogl \\\n              --log-stdout=all:info \\\n              --user-data-dir "$PWD/runtime-user-multipass" \\\n              "$GAME_FILE" 2>&1 | tee runtime-multipass.log\n\n          grep -F 'OGL: loaded shader pipeline:' runtime-multipass.log\n          if grep -E 'shader load failed|AGS librashader frame failed' runtime-multipass.log; then\n            echo 'multipass librashader runtime reported a failure' >&2\n            exit 1\n          fi\n          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"\n          test -n "$TAP_FILE"\n          test -s "$TAP_FILE"\n\n      - name: Verify OpenGL 3.3 fallback keeps AGS running\n        shell: bash\n        run: |\n          set -o pipefail\n          find . -type f -name 'agstest.tap' -delete\n          mkdir -p runtime-home-fallback runtime-user-fallback runtime-xdg-fallback\n          chmod 700 runtime-xdg-fallback\n          export HOME="$PWD/runtime-home-fallback"\n          export XDG_RUNTIME_DIR="$PWD/runtime-xdg-fallback"\n          export SDL_AUDIODRIVER=dummy\n          export LIBGL_ALWAYS_SOFTWARE=1\n          export MESA_GL_VERSION_OVERRIDE=2.1\n          export LD_LIBRARY_PATH="/tmp/librashader/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\n          export AGS_SHADER_CHAIN="$PWD/smoke-shader/bilinear.slangp"\n\n          timeout 180s xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \\\n            ./build/ags \\\n              --no-message-box \\\n              --windowed \\\n              --gfxdriver ogl \\\n              --log-stdout=all:info \\\n              --user-data-dir "$PWD/runtime-user-fallback" \\\n              "$GAME_FILE" 2>&1 | tee runtime-fallback.log\n\n          grep -E 'OGL: OpenGL 3\\.3 (window|compatibility context) creation failed' runtime-fallback.log\n          grep -F 'OGL: shader load failed: librashader requires OpenGL 3.3+' runtime-fallback.log\n          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"\n          test -n "$TAP_FILE"\n          test -s "$TAP_FILE"\n\n'''
+          w = w.replace(upload_marker, extra + upload_marker, 1)
+          w = w.replace('            runtime-smoke.log\n            glxinfo.txt\n', '            runtime-smoke.log\n            runtime-no-shader.log\n            runtime-multipass.log\n            runtime-fallback.log\n            glxinfo.txt\n')
+          wf.write_text(w)
+          PY
+
+          git diff --check
+          git status --short
+
+      - name: Commit reviewed fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Engine/gfx/ags_shader_pipeline.cpp Engine/gfx/README-SHADERS.md .github/workflows/librashader-runtime-smoke.yml
+          git commit -m 'Apply librashader review fixes'
+          git push origin HEAD:feature/librashader-runtime
