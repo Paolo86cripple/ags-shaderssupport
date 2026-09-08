@@ -16,9 +16,9 @@ or, for compatibility with the earlier prototype:
 AGS_SHADER=/absolute/path/to/preset.slangp ./ags game.exe
 ```
 
-`AGS_SHADER_CHAIN` takes precedence.
+`AGS_SHADER_CHAIN` takes precedence. AGS passes the selected preset path directly to librashader; preset parsing, validation, compilation, multipass behavior, LUTs, history/feedback and shader parameters are librashader responsibilities.
 
-The engine dynamically loads `librashader.so` at runtime and currently expects librashader C ABI 2. The library is not linked into AGS and is not required when no external shader preset is selected.
+The engine dynamically loads the host-installed librashader C ABI 2 at runtime. It prefers the canonical `librashader.so.2` SONAME and then accepts the unversioned `librashader.so` only when it reports ABI 2. librashader is not linked or bundled into AGS, so ABI-compatible host/package-manager updates are picked up without rebuilding AGS. If the host installs only an incompatible future ABI, AGS continues without the external shader pipeline.
 
 The OpenGL backend requires an OpenGL 3.3+ context. If the active context is older, AGS logs a shader-load warning and continues without the external shader chain.
 
@@ -33,4 +33,4 @@ The launcher is expected to store the selected preset in the per-game profile an
 
 ## Prototype formats
 
-The previous custom `.glslp`, `.agschain` and raw-GLSL parser/compiler were development scaffolding. The librashader backend intentionally replaces them with standard `.slangp` presets so AGS does not maintain its own RetroArch preset implementation.
+The previous custom `.glslp`, `.agschain` and raw-GLSL parser/compiler were development scaffolding. The librashader backend removes that shading logic from AGS entirely. The launcher may normally select `.slangp` presets, but the engine itself does not enforce a shader file extension: it delegates format support and validation to the installed librashader.
