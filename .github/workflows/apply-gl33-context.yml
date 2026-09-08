@@ -1,0 +1,182 @@
+name: Apply shader-aware OpenGL context update
+
+on:
+  push:
+    branches: [ feature/librashader-runtime ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/librashader-runtime
+
+      - name: Patch ali3dogl OpenGL context creation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Engine/gfx/ali3dogl.cpp')
+          text = path.read_text()
+          start_marker = 'bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)\n{\n'
+          end_marker = '\nvoid OGLGraphicsDriver::DeleteWindowAndGlContext()\n'
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('CreateWindowAndGlContext start marker not found')
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('CreateWindowAndGlContext end marker not found')
+
+          replacement = r'''bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
+{
+  // First setup GL attributes before creating SDL GL window.
+  // Preserve AGS' legacy OpenGL 2.1 context unless the Linux desktop shader
+  // bridge is explicitly requested. librashader's OpenGL backend requires 3.3+.
+  bool shader_gl33_requested = false;
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  const char *shader_path = std::getenv("AGS_SHADER_CHAIN");
+  if (!shader_path || shader_path[0] == '\0')
+    shader_path = std::getenv("AGS_SHADER");
+  shader_gl33_requested = shader_path && shader_path[0] != '\0';
+#endif
+
+  const auto set_gl_context_version = [](int major, int minor) {
+    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY) != 0)
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_PROFILE_MASK: %s", SDL_GetError());
+    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major) != 0)
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MAJOR_VERSION: %s", SDL_GetError());
+    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor) != 0)
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MINOR_VERSION: %s", SDL_GetError());
+  };
+
+#if AGS_OPENGL_ES2
+  set_gl_context_version(2, 0);
+  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_EGL, 1) != 0) {
+    Debug::Printf(kDbgMsg_Warn, "Error occured setting attribute SDL_GL_CONTEXT_EGL: %s", SDL_GetError());
+  }
+#else
+  if (shader_gl33_requested)
+  {
+    set_gl_context_version(3, 3);
+    Debug::Printf(kDbgMsg_Info, "OGL: external shader requested; requesting OpenGL 3.3 compatibility context");
+  }
+  else
+  {
+    set_gl_context_version(2, 1);
+  }
+#endif
+
+  // minimum number of bits for the depth buffer
+  if (SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0) != 0)
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_DEPTH_SIZE: %s", SDL_GetError());
+  if (SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8) != 0 ||
+      SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8) != 0 ||
+      SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8) != 0)
+  {
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting one of the attributes SDL_GL_(RED|GREEN| BLUE)_SIZE: %s", SDL_GetError());
+  }
+  if (SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1) != 0)
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_DOUBLEBUFFER: %s", SDL_GetError());
+
+  SDL_Window *sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+  if (!sdl_window)
+  {
+    Debug::Printf(kDbgMsg_Error, "Error opening window for OpenGL: %s", SDL_GetError());
+    return false;
+  }
+
+  SDL_GLContext sdlgl_ctx = SDL_GL_CreateContext(sdl_window);
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  if (sdlgl_ctx == NULL && shader_gl33_requested)
+  {
+    Debug::Printf(kDbgMsg_Warn,
+      "OGL: OpenGL 3.3 compatibility context creation failed (%s); retrying legacy OpenGL 2.1 without external shaders",
+      SDL_GetError());
+
+    // Recreate the window after changing the requested GL version. On some
+    // platforms the pixel format chosen for a GL window depends on attributes
+    // set before window creation, so retrying on the same SDL_Window is unsafe.
+    sys_window_destroy();
+    sdl_window = nullptr;
+    set_gl_context_version(2, 1);
+
+    sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+    if (!sdl_window)
+    {
+      Debug::Printf(kDbgMsg_Error, "Error reopening window for OpenGL 2.1 fallback: %s", SDL_GetError());
+      return false;
+    }
+    sdlgl_ctx = SDL_GL_CreateContext(sdl_window);
+  }
+#endif
+  if (sdlgl_ctx == NULL) {
+    Debug::Printf(kDbgMsg_Error, "Error creating OpenGL context: %s", SDL_GetError());
+    sys_window_destroy();
+    return false;
+  }
+
+  if (SDL_GL_MakeCurrent(sdl_window, sdlgl_ctx) != 0) {
+    Debug::Printf(kDbgMsg_Error, "Error setting current OpenGL context: %s", SDL_GetError());
+    SDL_GL_DeleteContext(sdlgl_ctx);
+    sys_window_destroy();
+    return false;
+  }
+#if AGS_OPENGL_ES2
+    if (!gladLoadGLES2Loader((GLADloadproc) SDL_GL_GetProcAddress)) {
+        Debug::Printf(kDbgMsg_Error, "Failed to load glad with gladLoadGLES2Loader");
+    }
+#else
+  if (!gladLoadGL()) {
+    Debug::Printf(kDbgMsg_Error, "Failed to load GL.");
+    SDL_GL_DeleteContext(sdlgl_ctx);
+    sys_window_destroy();
+    return false;
+  }
+#endif
+  _sdlWindow = sdl_window;
+  _sdlGlContext = sdlgl_ctx;
+#if AGS_PLATFORM_OS_IOS
+  // The SDL implementation of the iOS OpenGL view (SDL_uikitopenglview.m) generates its own framebuffer to target the renderbuffer
+  // Instead of using framebuffer 0, we ask OpenGL to get the current framebuffer.
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &_screenFramebuffer);
+#endif
+
+  const char *gl_version = (const char*)glGetString(GL_VERSION);
+  const char *gl_vendor = (const char*)glGetString(GL_VENDOR);
+  const char *gl_renderer = (const char*)glGetString(GL_RENDERER);
+  String adapter_info = String::FromFormat(
+      "\tOpenGL: %s\n\tVendor: %s\n\tRenderer: %s",
+      gl_version, gl_vendor, gl_renderer
+    );
+  Debug::Printf(kDbgMsg_Info, "OpenGL adapter info:\n%s", adapter_info.GetCStr());
+  return true;
+}
+'''
+
+          current = text[start:end]
+          if current == replacement:
+              print('ali3dogl.cpp already patched')
+          else:
+              text = text[:start] + replacement + text[end:]
+              path.write_text(text)
+          PY
+          git diff --check
+          git diff -- Engine/gfx/ali3dogl.cpp
+
+      - name: Commit OpenGL context update
+        shell: bash
+        run: |
+          if git diff --quiet -- Engine/gfx/ali3dogl.cpp; then
+            echo 'No ali3dogl.cpp changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Engine/gfx/ali3dogl.cpp
+          git commit -m 'Request OpenGL 3.3 for librashader with 2.1 fallback'
+          git push origin HEAD:feature/librashader-runtime
