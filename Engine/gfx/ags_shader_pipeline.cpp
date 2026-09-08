@@ -1,10 +1,10 @@
 #include "gfx/ags_shader_pipeline.h"
 
 #include "gfx/ogl_headers.h"
-#include "glad/glad.h"
 
 #include <SDL.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -22,6 +22,28 @@ namespace OGL
 {
 
 #if defined(__linux__) && !AGS_OPENGL_ES2
+
+#ifndef GL_FRAMEBUFFER
+#define GL_FRAMEBUFFER 0x8D40
+#endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
+#ifndef GL_FRAMEBUFFER_COMPLETE
+#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#endif
+#ifndef GL_COLOR_ATTACHMENT0
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER_BINDING
+#define GL_DRAW_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+#ifndef GL_READ_FRAMEBUFFER_BINDING
+#define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+#endif
 
 namespace
 {
@@ -60,7 +82,6 @@ struct libra_viewport_t
 };
 
 typedef size_t (*PFN_libra_instance_abi_version)(void);
-typedef size_t (*PFN_libra_instance_api_version)(void);
 typedef libra_error_t (*PFN_libra_preset_ctx_create)(libra_preset_ctx_t *);
 typedef libra_error_t (*PFN_libra_preset_ctx_free)(libra_preset_ctx_t *);
 typedef libra_error_t (*PFN_libra_preset_ctx_set_runtime)(libra_preset_ctx_t *, LIBRA_PRESET_CTX_RUNTIME);
@@ -75,6 +96,17 @@ typedef libra_error_t (*PFN_libra_gl_filter_chain_free)(libra_gl_filter_chain_t 
 typedef int32_t (*PFN_libra_error_free)(libra_error_t *);
 typedef int32_t (*PFN_libra_error_write)(libra_error_t, char **);
 typedef int32_t (*PFN_libra_error_free_string)(char **);
+
+// AGS' bundled GLAD intentionally exposes only OpenGL 2.1 + EXT FBO.
+// Keep that loader untouched and resolve the small OpenGL 3.x surface required
+// by the librashader bridge directly from the active SDL context.
+typedef void (APIENTRY *PFN_AGS_GL_GEN_FRAMEBUFFERS)(GLsizei, GLuint *);
+typedef void (APIENTRY *PFN_AGS_GL_DELETE_FRAMEBUFFERS)(GLsizei, const GLuint *);
+typedef void (APIENTRY *PFN_AGS_GL_BIND_FRAMEBUFFER)(GLenum, GLuint);
+typedef GLenum (APIENTRY *PFN_AGS_GL_CHECK_FRAMEBUFFER_STATUS)(GLenum);
+typedef void (APIENTRY *PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef void (APIENTRY *PFN_AGS_GL_BLIT_FRAMEBUFFER)(
+    GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
 
 const size_t kLibrashaderAbi = 2;
 
@@ -102,11 +134,38 @@ bool HasSuffix(const std::string &value, const char *suffix)
     return true;
 }
 
+bool CurrentOpenGLAtLeast(int required_major, int required_minor,
+                          std::string &version_string)
+{
+    const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+    if (!version)
+    {
+        version_string = "unknown";
+        return false;
+    }
+
+    version_string = version;
+    int major = 0;
+    int minor = 0;
+    if (std::sscanf(version, "%d.%d", &major, &minor) != 2)
+        return false;
+
+    return (major > required_major) ||
+           (major == required_major && minor >= required_minor);
+}
+
 template <typename T>
-bool LoadSymbol(void *library, const char *name, T &out)
+bool LoadLibrarySymbol(void *library, const char *name, T &out)
 {
     dlerror();
     out = reinterpret_cast<T>(dlsym(library, name));
+    return out != nullptr;
+}
+
+template <typename T>
+bool LoadGLSymbol(const char *name, T &out)
+{
+    out = reinterpret_cast<T>(SDL_GL_GetProcAddress(name));
     return out != nullptr;
 }
 
@@ -126,7 +185,6 @@ struct AGSShaderPipeline::Impl
     bool frame_error_reported = false;
 
     PFN_libra_instance_abi_version instance_abi_version = nullptr;
-    PFN_libra_instance_api_version instance_api_version = nullptr;
     PFN_libra_preset_ctx_create preset_ctx_create = nullptr;
     PFN_libra_preset_ctx_free preset_ctx_free = nullptr;
     PFN_libra_preset_ctx_set_runtime preset_ctx_set_runtime = nullptr;
@@ -137,6 +195,13 @@ struct AGSShaderPipeline::Impl
     PFN_libra_error_free error_free = nullptr;
     PFN_libra_error_write error_write = nullptr;
     PFN_libra_error_free_string error_free_string = nullptr;
+
+    PFN_AGS_GL_GEN_FRAMEBUFFERS GenFramebuffers = nullptr;
+    PFN_AGS_GL_DELETE_FRAMEBUFFERS DeleteFramebuffers = nullptr;
+    PFN_AGS_GL_BIND_FRAMEBUFFER BindFramebuffer = nullptr;
+    PFN_AGS_GL_CHECK_FRAMEBUFFER_STATUS CheckFramebufferStatus = nullptr;
+    PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D FramebufferTexture2D = nullptr;
+    PFN_AGS_GL_BLIT_FRAMEBUFFER BlitFramebuffer = nullptr;
 
     std::string ConsumeError(libra_error_t error)
     {
@@ -155,6 +220,25 @@ struct AGSShaderPipeline::Impl
         if (error_free)
             error_free(&error);
         return message;
+    }
+
+    bool LoadModernGL(std::string &error)
+    {
+#define LOAD_GL_SYMBOL(member, symbol) \
+        if (!LoadGLSymbol(symbol, member)) \
+        { \
+            error = std::string("OpenGL 3.x entry point unavailable: ") + symbol; \
+            return false; \
+        }
+
+        LOAD_GL_SYMBOL(GenFramebuffers, "glGenFramebuffers");
+        LOAD_GL_SYMBOL(DeleteFramebuffers, "glDeleteFramebuffers");
+        LOAD_GL_SYMBOL(BindFramebuffer, "glBindFramebuffer");
+        LOAD_GL_SYMBOL(CheckFramebufferStatus, "glCheckFramebufferStatus");
+        LOAD_GL_SYMBOL(FramebufferTexture2D, "glFramebufferTexture2D");
+        LOAD_GL_SYMBOL(BlitFramebuffer, "glBlitFramebuffer");
+#undef LOAD_GL_SYMBOL
+        return true;
     }
 
     bool OpenLibrary(std::string &error)
@@ -187,14 +271,13 @@ struct AGSShaderPipeline::Impl
         }
 
 #define LOAD_LIBRA_SYMBOL(member, symbol) \
-        if (!LoadSymbol(library, symbol, member)) \
+        if (!LoadLibrarySymbol(library, symbol, member)) \
         { \
             error = std::string("missing librashader symbol: ") + symbol; \
             return false; \
         }
 
         LOAD_LIBRA_SYMBOL(instance_abi_version, "libra_instance_abi_version");
-        LOAD_LIBRA_SYMBOL(instance_api_version, "libra_instance_api_version");
         LOAD_LIBRA_SYMBOL(preset_ctx_create, "libra_preset_ctx_create");
         LOAD_LIBRA_SYMBOL(preset_ctx_free, "libra_preset_ctx_free");
         LOAD_LIBRA_SYMBOL(preset_ctx_set_runtime, "libra_preset_ctx_set_runtime");
@@ -220,8 +303,8 @@ struct AGSShaderPipeline::Impl
 
     void DestroyTargets()
     {
-        if (output_fbo)
-            glDeleteFramebuffers(1, &output_fbo);
+        if (output_fbo && DeleteFramebuffers)
+            DeleteFramebuffers(1, &output_fbo);
         if (output_texture)
             glDeleteTextures(1, &output_texture);
         if (input_texture)
@@ -260,12 +343,12 @@ struct AGSShaderPipeline::Impl
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
                      GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-        glGenFramebuffers(1, &output_fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, output_fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, output_texture, 0);
+        GenFramebuffers(1, &output_fbo);
+        BindFramebuffer(GL_FRAMEBUFFER, output_fbo);
+        FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                             GL_TEXTURE_2D, output_texture, 0);
 
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        if (CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         {
             error = "failed to create librashader output framebuffer";
             DestroyTargets();
@@ -329,18 +412,15 @@ bool AGSShaderPipeline::Load(const std::string &path, std::string &error)
         return false;
     }
 
-    if (!GLAD_GL_VERSION_3_3)
+    std::string gl_version;
+    if (!CurrentOpenGLAtLeast(3, 3, gl_version))
     {
-        const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
-        error = "librashader requires OpenGL 3.3+";
-        if (version)
-        {
-            error += " (current context: ";
-            error += version;
-            error += ")";
-        }
+        error = "librashader requires OpenGL 3.3+ (current context: " + gl_version + ")";
         return false;
     }
+
+    if (!_impl->LoadModernGL(error))
+        return false;
 
     if (!_impl->OpenLibrary(error))
     {
@@ -428,6 +508,21 @@ void AGSShaderPipeline::Apply(int input_width, int input_height,
         output_width <= 0 || output_height <= 0)
         return;
 
+    // The current AGS integration feeds the completed backbuffer, therefore
+    // input and output dimensions are expected to match. Keep the guard here
+    // until the renderer exposes a separate logical-source texture.
+    if (input_width != output_width || input_height != output_height)
+    {
+        if (!_impl->frame_error_reported)
+        {
+            std::fprintf(stderr,
+                         "AGS librashader: source/output size mismatch (%dx%d -> %dx%d)\n",
+                         input_width, input_height, output_width, output_height);
+            _impl->frame_error_reported = true;
+        }
+        return;
+    }
+
     GLint old_draw_fbo = 0;
     GLint old_read_fbo = 0;
     GLint old_read_buffer = 0;
@@ -450,19 +545,19 @@ void AGSShaderPipeline::Apply(int input_width, int input_height,
             std::fprintf(stderr, "AGS librashader: %s\n", target_error.c_str());
             _impl->frame_error_reported = true;
         }
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_fbo);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fbo);
-        glReadBuffer(old_read_buffer);
-        glActiveTexture(old_active_texture);
-        glBindTexture(GL_TEXTURE_2D, old_texture);
+        _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(old_draw_fbo));
+        _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(old_read_fbo));
+        glReadBuffer(static_cast<GLenum>(old_read_buffer));
+        glActiveTexture(static_cast<GLenum>(old_active_texture));
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(old_texture));
         glViewport(old_viewport[0], old_viewport[1],
                    old_viewport[2], old_viewport[3]);
         return;
     }
 
-    // Capture the already-rendered AGS backbuffer as librashader's source texture.
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fbo);
-    glReadBuffer(old_read_buffer);
+    // Capture the already-rendered AGS backbuffer as librashader's source.
+    _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(old_read_fbo));
+    glReadBuffer(static_cast<GLenum>(old_read_buffer));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, _impl->input_texture);
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0,
@@ -492,14 +587,14 @@ void AGSShaderPipeline::Apply(int input_width, int input_height,
 
     if (!libra_error)
     {
-        // librashader renders to a caller-owned texture. Copy that texture back
-        // to the framebuffer AGS is about to present.
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, _impl->output_fbo);
+        // librashader renders to a caller-owned texture. Copy the completed
+        // texture back to the framebuffer AGS is about to present.
+        _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, _impl->output_fbo);
         glReadBuffer(GL_COLOR_ATTACHMENT0);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_fbo);
-        glBlitFramebuffer(0, 0, output_width, output_height,
-                          0, 0, output_width, output_height,
-                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(old_draw_fbo));
+        _impl->BlitFramebuffer(0, 0, output_width, output_height,
+                               0, 0, output_width, output_height,
+                               GL_COLOR_BUFFER_BIT, GL_NEAREST);
     }
     else if (!_impl->frame_error_reported)
     {
@@ -512,11 +607,11 @@ void AGSShaderPipeline::Apply(int input_width, int input_height,
         _impl->ConsumeError(libra_error);
     }
 
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_fbo);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fbo);
-    glReadBuffer(old_read_buffer);
-    glActiveTexture(old_active_texture);
-    glBindTexture(GL_TEXTURE_2D, old_texture);
+    _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(old_draw_fbo));
+    _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(old_read_fbo));
+    glReadBuffer(static_cast<GLenum>(old_read_buffer));
+    glActiveTexture(static_cast<GLenum>(old_active_texture));
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(old_texture));
     glViewport(old_viewport[0], old_viewport[1],
                old_viewport[2], old_viewport[3]);
 #else
