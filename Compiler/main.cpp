@@ -263,12 +263,12 @@ ParsedOptions parser_to_compiler_opts(const ParseResult& parseResult)
 int main(int argc, char* argv[])
 {
     CompilerOptions compilerOptions;
-    printf(R"EOS(agscc v0.1.0 - A Compiler for AGS Script
-Copyright (c) 2021 AGS Team and contributors
+    printf(R"EOS(agscc v0.2.0 - A Compiler for AGS Script
+Copyright (c) 2026 AGS Team and contributors
 )EOS"
     );
 
-    ParseResult parseResult = Parse(argc,argv,{"-D", "-H", "--Headers", "-A", "-C", "-f", "-o", "--output"});
+    ParseResult parseResult = Parse(argc,argv,{"-D", "-H", "--Headers", "-A", "-C", "-f", "-o", "--output", "--override-version"});
     ParsedOptions parsedOptions = parser_to_compiler_opts(parseResult);
 
     if(parsedOptions.Exit) return parsedOptions.ErrorCode;
