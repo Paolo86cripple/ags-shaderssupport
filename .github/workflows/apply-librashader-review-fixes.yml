@@ -18,23 +18,391 @@ jobs:
           ref: feature/librashader-runtime
           fetch-depth: 0
 
-      - name: Apply reviewed fixes
+      - name: Apply reviewed source fixes
         shell: bash
         run: |
-          printf '%s' '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' | base64 -d | gzip -d > /tmp/apply.py
-          python3 /tmp/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('Engine/gfx/ags_shader_pipeline.cpp')
+          s = p.read_text()
+
+          s = s.replace('#include <cstring>\n', '')
+          s = s.replace(
+          '''#ifndef GL_READ_FRAMEBUFFER_BINDING
+          #define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+          #endif
+          ''',
+          '''#ifndef GL_READ_FRAMEBUFFER_BINDING
+          #define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+          #endif
+          #ifndef GL_VERTEX_ARRAY_BINDING
+          #define GL_VERTEX_ARRAY_BINDING 0x85B5
+          #endif
+          #ifndef GL_SAMPLER_BINDING
+          #define GL_SAMPLER_BINDING 0x8919
+          #endif
+          ''')
+
+          s = s.replace(
+          '''struct _filter_chain_gl;
+
+          typedef _libra_error *libra_error_t;
+          typedef _shader_preset *libra_shader_preset_t;
+          typedef _preset_ctx *libra_preset_ctx_t;
+          typedef _filter_chain_gl *libra_gl_filter_chain_t;
+          typedef const void *(*libra_gl_loader_t)(const char *);
+
+          enum LIBRA_PRESET_CTX_RUNTIME
+          {
+              LIBRA_PRESET_CTX_RUNTIME_NONE = 0,
+              LIBRA_PRESET_CTX_RUNTIME_GL_CORE = 1
+          };
+          ''',
+          '''struct _filter_chain_gl;
+          struct filter_chain_gl_opt_t;
+          struct frame_gl_opt_t;
+
+          typedef _libra_error *libra_error_t;
+          typedef _shader_preset *libra_shader_preset_t;
+          typedef _preset_ctx *libra_preset_ctx_t;
+          typedef _filter_chain_gl *libra_gl_filter_chain_t;
+          typedef const void *(*libra_gl_loader_t)(const char *);
+
+          // Exact ABI-2 C representation used by librashader. This is only the
+          // host-side FFI contract; librashader remains external and dynamically loaded.
+          enum LIBRA_PRESET_CTX_RUNTIME : uint32_t
+          {
+              LIBRA_PRESET_CTX_RUNTIME_NONE = 0,
+              LIBRA_PRESET_CTX_RUNTIME_GL_CORE = 1
+          };
+          ''')
+
+          s = s.replace(
+          '''typedef libra_error_t (*PFN_libra_gl_filter_chain_create)(
+              libra_shader_preset_t *, libra_gl_loader_t, const void *, libra_gl_filter_chain_t *);
+          typedef libra_error_t (*PFN_libra_gl_filter_chain_frame)(
+              libra_gl_filter_chain_t *, size_t, libra_image_gl_t, libra_image_gl_t,
+              const libra_viewport_t *, const float *, const void *);
+          ''',
+          '''typedef libra_error_t (*PFN_libra_gl_filter_chain_create)(
+              libra_shader_preset_t *, libra_gl_loader_t, const filter_chain_gl_opt_t *, libra_gl_filter_chain_t *);
+          typedef libra_error_t (*PFN_libra_gl_filter_chain_frame)(
+              libra_gl_filter_chain_t *, size_t, libra_image_gl_t, libra_image_gl_t,
+              const libra_viewport_t *, const float *, const frame_gl_opt_t *);
+          ''')
+
+          s = s.replace(
+          '''typedef void (APIENTRY *PFN_AGS_GL_BLIT_FRAMEBUFFER)(
+              GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+          ''',
+          '''typedef void (APIENTRY *PFN_AGS_GL_BLIT_FRAMEBUFFER)(
+              GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+          typedef void (APIENTRY *PFN_AGS_GL_BIND_VERTEX_ARRAY)(GLuint);
+          typedef void (APIENTRY *PFN_AGS_GL_BIND_SAMPLER)(GLuint, GLuint);
+          ''')
+
+          start = s.index('bool HasSuffix(')
+          end = s.index('\nbool CurrentOpenGLAtLeast', start)
+          s = s[:start] + s[end + 1:]
+
+          s = s.replace(
+          '''    PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D FramebufferTexture2D = nullptr;
+              PFN_AGS_GL_BLIT_FRAMEBUFFER BlitFramebuffer = nullptr;
+          ''',
+          '''    PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D FramebufferTexture2D = nullptr;
+              PFN_AGS_GL_BLIT_FRAMEBUFFER BlitFramebuffer = nullptr;
+              PFN_AGS_GL_BIND_VERTEX_ARRAY BindVertexArray = nullptr;
+              PFN_AGS_GL_BIND_SAMPLER BindSampler = nullptr;
+
+              struct HostGLState
+              {
+                  GLint draw_fbo = 0;
+                  GLint read_fbo = 0;
+                  GLint read_buffer = 0;
+                  GLint current_program = 0;
+                  GLint array_buffer = 0;
+                  GLint vertex_array = 0;
+                  GLint active_texture = GL_TEXTURE0;
+                  GLint active_texture_binding = 0;
+                  GLint active_sampler = 0;
+                  GLint texture0_binding = 0;
+                  GLint sampler0 = 0;
+                  GLint viewport[4] = {0, 0, 0, 0};
+              };
+
+              HostGLState CaptureHostGLState()
+              {
+                  HostGLState state;
+                  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &state.draw_fbo);
+                  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &state.read_fbo);
+                  glGetIntegerv(GL_READ_BUFFER, &state.read_buffer);
+                  glGetIntegerv(GL_CURRENT_PROGRAM, &state.current_program);
+                  glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &state.array_buffer);
+                  glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state.vertex_array);
+                  glGetIntegerv(GL_ACTIVE_TEXTURE, &state.active_texture);
+                  glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.active_texture_binding);
+                  glGetIntegerv(GL_SAMPLER_BINDING, &state.active_sampler);
+                  glGetIntegerv(GL_VIEWPORT, state.viewport);
+
+                  if (state.active_texture == GL_TEXTURE0)
+                  {
+                      state.texture0_binding = state.active_texture_binding;
+                      state.sampler0 = state.active_sampler;
+                  }
+                  else
+                  {
+                      glActiveTexture(GL_TEXTURE0);
+                      glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.texture0_binding);
+                      glGetIntegerv(GL_SAMPLER_BINDING, &state.sampler0);
+                      glActiveTexture(static_cast<GLenum>(state.active_texture));
+                  }
+                  return state;
+              }
+
+              void RestoreHostGLState(const HostGLState &state)
+              {
+                  BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(state.draw_fbo));
+                  BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(state.read_fbo));
+                  glReadBuffer(static_cast<GLenum>(state.read_buffer));
+                  glUseProgram(static_cast<GLuint>(state.current_program));
+                  BindVertexArray(static_cast<GLuint>(state.vertex_array));
+                  glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.array_buffer));
+
+                  glActiveTexture(GL_TEXTURE0);
+                  glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.texture0_binding));
+                  BindSampler(0, static_cast<GLuint>(state.sampler0));
+
+                  if (state.active_texture != GL_TEXTURE0)
+                  {
+                      const GLuint active_unit = static_cast<GLuint>(state.active_texture - GL_TEXTURE0);
+                      glActiveTexture(static_cast<GLenum>(state.active_texture));
+                      glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.active_texture_binding));
+                      BindSampler(active_unit, static_cast<GLuint>(state.active_sampler));
+                  }
+                  else
+                  {
+                      glActiveTexture(GL_TEXTURE0);
+                  }
+
+                  glViewport(state.viewport[0], state.viewport[1],
+                             state.viewport[2], state.viewport[3]);
+              }
+          ''')
+
+          s = s.replace(
+          '''        LOAD_GL_SYMBOL(FramebufferTexture2D, "glFramebufferTexture2D");
+                  LOAD_GL_SYMBOL(BlitFramebuffer, "glBlitFramebuffer");
+          #undef LOAD_GL_SYMBOL
+          ''',
+          '''        LOAD_GL_SYMBOL(FramebufferTexture2D, "glFramebufferTexture2D");
+                  LOAD_GL_SYMBOL(BlitFramebuffer, "glBlitFramebuffer");
+                  LOAD_GL_SYMBOL(BindVertexArray, "glBindVertexArray");
+                  LOAD_GL_SYMBOL(BindSampler, "glBindSampler");
+          #undef LOAD_GL_SYMBOL
+          ''')
+
+          start = s.index('    bool OpenLibrary(std::string &error)')
+          end = s.index('\n    void DestroyTargets()', start)
+          replacement = '''    void ResetLibrarySymbols()
+              {
+                  instance_abi_version = nullptr;
+                  preset_ctx_create = nullptr;
+                  preset_ctx_free = nullptr;
+                  preset_ctx_set_runtime = nullptr;
+                  preset_create_with_context = nullptr;
+                  gl_filter_chain_create = nullptr;
+                  gl_filter_chain_frame = nullptr;
+                  gl_filter_chain_free = nullptr;
+                  error_free = nullptr;
+                  error_write = nullptr;
+                  error_free_string = nullptr;
+              }
+
+              bool ResolveLibrarySymbols(std::string &error)
+              {
+          #define LOAD_LIBRA_SYMBOL(member, symbol) \\
+                  if (!LoadLibrarySymbol(library, symbol, member)) \\
+                  { \\
+                      error = std::string("missing librashader symbol: ") + symbol; \\
+                      return false; \\
+                  }
+
+                  LOAD_LIBRA_SYMBOL(instance_abi_version, "libra_instance_abi_version");
+                  const size_t abi = instance_abi_version();
+                  if (abi != kLibrashaderAbi)
+                  {
+                      error = "unsupported librashader ABI " + std::to_string(abi) +
+                              " (AGS shader backend expects ABI " + std::to_string(kLibrashaderAbi) + ")";
+                      return false;
+                  }
+
+                  LOAD_LIBRA_SYMBOL(preset_ctx_create, "libra_preset_ctx_create");
+                  LOAD_LIBRA_SYMBOL(preset_ctx_free, "libra_preset_ctx_free");
+                  LOAD_LIBRA_SYMBOL(preset_ctx_set_runtime, "libra_preset_ctx_set_runtime");
+                  LOAD_LIBRA_SYMBOL(preset_create_with_context, "libra_preset_create_with_context");
+                  LOAD_LIBRA_SYMBOL(gl_filter_chain_create, "libra_gl_filter_chain_create");
+                  LOAD_LIBRA_SYMBOL(gl_filter_chain_frame, "libra_gl_filter_chain_frame");
+                  LOAD_LIBRA_SYMBOL(gl_filter_chain_free, "libra_gl_filter_chain_free");
+                  LOAD_LIBRA_SYMBOL(error_free, "libra_error_free");
+                  LOAD_LIBRA_SYMBOL(error_write, "libra_error_write");
+                  LOAD_LIBRA_SYMBOL(error_free_string, "libra_error_free_string");
+          #undef LOAD_LIBRA_SYMBOL
+                  return true;
+              }
+
+              bool OpenLibrary(std::string &error)
+              {
+                  if (library)
+                      return true;
+
+                  // Prefer the canonical ABI-2 SONAME. The unversioned symlink may
+                  // point to a future ABI after an host update; keep searching for
+                  // an installed ABI-2 library rather than failing on that symlink.
+                  const char *candidates[] = {
+                      "librashader.so.2",
+                      "librashader.so"
+                  };
+
+                  std::string attempts;
+                  for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i)
+                  {
+                      ResetLibrarySymbols();
+                      dlerror();
+                      library = dlopen(candidates[i], RTLD_NOW | RTLD_LOCAL);
+                      if (!library)
+                      {
+                          const char *dl_error = dlerror();
+                          if (!attempts.empty()) attempts += "; ";
+                          attempts += candidates[i];
+                          attempts += ": ";
+                          attempts += (dl_error && dl_error[0]) ? dl_error : "not found";
+                          continue;
+                      }
+
+                      std::string candidate_error;
+                      if (ResolveLibrarySymbols(candidate_error))
+                          return true;
+
+                      if (!attempts.empty()) attempts += "; ";
+                      attempts += candidates[i];
+                      attempts += ": ";
+                      attempts += candidate_error;
+                      dlclose(library);
+                      library = nullptr;
+                  }
+
+                  ResetLibrarySymbols();
+                  error = "cannot load compatible librashader ABI 2";
+                  if (!attempts.empty())
+                      error += " (" + attempts + ")";
+                  return false;
+              }
+          '''
+          s = s[:start] + replacement + s[end:]
+
+          s = s.replace(
+          '''    void CloseLibrary()
+              {
+                  if (library)
+                      dlclose(library);
+                  library = nullptr;
+              }
+          ''',
+          '''    void CloseLibrary()
+              {
+                  if (library)
+                      dlclose(library);
+                  library = nullptr;
+                  ResetLibrarySymbols();
+              }
+          ''')
+
+          s = s.replace(
+          '''    if (!HasSuffix(path, ".slangp"))
+              {
+                  error = "librashader backend expects a RetroArch .slangp preset";
+                  return false;
+              }
+
+          ''', '')
+
+          old = '''    GLint old_draw_fbo = 0;
+              GLint old_read_fbo = 0;
+              GLint old_read_buffer = 0;
+              GLint old_active_texture = GL_TEXTURE0;
+              GLint old_texture = 0;
+              GLint old_viewport[4] = {0, 0, 0, 0};
+
+              glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw_fbo);
+              glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fbo);
+              glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+              glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
+              glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+              glGetIntegerv(GL_VIEWPORT, old_viewport);
+
+              std::string target_error;
+          '''
+          new = '''    const Impl::HostGLState host_state = _impl->CaptureHostGLState();
+              glActiveTexture(GL_TEXTURE0);
+
+              std::string target_error;
+          '''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''        _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(old_draw_fbo));
+                  _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(old_read_fbo));
+                  glReadBuffer(static_cast<GLenum>(old_read_buffer));
+                  glActiveTexture(static_cast<GLenum>(old_active_texture));
+                  glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(old_texture));
+                  glViewport(old_viewport[0], old_viewport[1],
+                             old_viewport[2], old_viewport[3]);
+                  return;
+          '''
+          assert old in s
+          s = s.replace(old, '''        _impl->RestoreHostGLState(host_state);\n        return;\n''', 1)
+
+          s = s.replace('static_cast<GLuint>(old_read_fbo)', 'static_cast<GLuint>(host_state.read_fbo)')
+          s = s.replace('static_cast<GLenum>(old_read_buffer)', 'static_cast<GLenum>(host_state.read_buffer)')
+          s = s.replace('static_cast<GLuint>(old_draw_fbo)', 'static_cast<GLuint>(host_state.draw_fbo)')
+
+          old = '''    _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(host_state.draw_fbo));
+              _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(host_state.read_fbo));
+              glReadBuffer(static_cast<GLenum>(host_state.read_buffer));
+              glActiveTexture(static_cast<GLenum>(old_active_texture));
+              glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(old_texture));
+              glViewport(old_viewport[0], old_viewport[1],
+                         old_viewport[2], old_viewport[3]);
+          '''
+          assert old in s
+          s = s.replace(old, '    _impl->RestoreHostGLState(host_state);\n', 1)
+
+          p.write_text(s)
+
+          rpath = Path('Engine/gfx/README-SHADERS.md')
+          r = rpath.read_text()
+          r = r.replace(
+              '`AGS_SHADER_CHAIN` takes precedence.\n\nThe engine dynamically loads `librashader.so` at runtime and currently expects librashader C ABI 2. The library is not linked into AGS and is not required when no external shader preset is selected.\n',
+              '`AGS_SHADER_CHAIN` takes precedence. AGS passes the selected preset path directly to librashader; preset parsing, validation, compilation, multipass behavior, LUTs, history/feedback and shader parameters are librashader responsibilities.\n\nThe engine dynamically loads the host-installed librashader C ABI 2 at runtime. It prefers the canonical `librashader.so.2` SONAME and then accepts the unversioned `librashader.so` only when it reports ABI 2. librashader is not linked or bundled into AGS, so ABI-compatible host/package-manager updates are picked up without rebuilding AGS. If the host installs only an incompatible future ABI, AGS continues without the external shader pipeline.\n')
+          r = r.replace(
+              'The previous custom `.glslp`, `.agschain` and raw-GLSL parser/compiler were development scaffolding. The librashader backend intentionally replaces them with standard `.slangp` presets so AGS does not maintain its own RetroArch preset implementation.\n',
+              'The previous custom `.glslp`, `.agschain` and raw-GLSL parser/compiler were development scaffolding. The librashader backend removes that shading logic from AGS entirely. The launcher may normally select `.slangp` presets, but the engine itself does not enforce a shader file extension: it delegates format support and validation to the installed librashader.\n')
+          rpath.write_text(r)
+          PY
+
           git diff --check
           git status --short
 
-      - name: Commit reviewed fixes
+      - name: Commit reviewed source fixes
         shell: bash
         run: |
-          if git diff --quiet; then
-            echo 'No changes to commit.'
-            exit 0
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Engine/gfx/ags_shader_pipeline.cpp Engine/gfx/README-SHADERS.md .github/workflows/librashader-runtime-smoke.yml
+          git add Engine/gfx/ags_shader_pipeline.cpp Engine/gfx/README-SHADERS.md
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
           git commit -m 'Apply librashader review fixes'
           git push origin HEAD:feature/librashader-runtime
