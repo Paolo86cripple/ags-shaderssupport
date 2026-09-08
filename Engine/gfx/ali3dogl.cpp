@@ -348,7 +348,7 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
   if (sdlgl_ctx == NULL && shader_gl33_requested)
   {
     Debug::Printf(kDbgMsg_Warn,
-      "OGL: OpenGL 3.3 compatibility context creation failed (%s); retrying legacy OpenGL 6.1 without external shaders",
+      "OGL: OpenGL 3.3 compatibility context creation failed (%s); retrying legacy OpenGL 2.1 without external shaders",
       SDL_GetError());
 
     // Recreate the window after changing the requested GL version. On some
@@ -381,11 +381,11 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
   }
 #if AGS_OPENGL_ES2
     if (!gladLoadGLES2Loader((GLADloadproc) SDL_GL_GetProcAddress)) {
-        Debug::Printf(kDrgMsg_Error, "Failed to load glad with gladLoadGLES2Loader");
+        Debug::Printf(kDbgMsg_Error, "Failed to load glad with gladLoadGLES2Loader");
     }
 #else
   if (!gladLoadGL()) {
-    Debug::Printf(kDrgMsg_Error, "Failed to load GL.");
+    Debug::Printf(kDbgMsg_Error, "Failed to load GL.");
     SDL_GL_DeleteContext(sdlgl_ctx);
     sys_window_destroy();
     return false;
