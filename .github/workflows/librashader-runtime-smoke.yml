@@ -1,8 +1,17 @@
 name: Librashader OpenGL runtime smoke
 
 on:
+  pull_request:
+    paths:
+      - 'Engine/gfx/ags_shader_pipeline.cpp'
+      - 'Engine/gfx/ags_shader_pipeline.h'
+      - 'Engine/gfx/ali3dogl.cpp'
+      - 'Engine/gfx/README-SHADERS.md'
+      - 'Engine/CMakeLists.txt'
+      - '.github/workflows/librashader-runtime-smoke.yml'
   push:
     branches:
+      - master
       - feature/librashader-runtime
   workflow_dispatch:
 
@@ -13,7 +22,7 @@ jobs:
   smoke-linux:
     name: AGS + librashader + Mesa smoke
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout AGS branch
@@ -44,7 +53,7 @@ jobs:
       - name: Build AGS
         run: cmake --build build --config Release --parallel 4
 
-      - name: Build librashader 0.12.0 OpenGL C API
+      - name: Build librashader 0.12.0 OpenGL C API baseline
         shell: bash
         run: |
           rustc --version
@@ -58,8 +67,9 @@ jobs:
             --no-default-features \
             --features runtime-opengl
           test -f target/release/liblibrashader_capi.so
-          cp target/release/liblibrashader_capi.so target/release/librashader.so
-          test -f target/release/librashader.so
+          cp target/release/liblibrashader_capi.so target/release/librashader.so.2
+          ln -sf librashader.so.2 target/release/librashader.so
+          test -f target/release/librashader.so.2
 
       - name: Download official AGS auto-test game
         shell: bash
@@ -75,7 +85,7 @@ jobs:
           printf 'GAME_FILE=%s\n' "$GAME_FILE" >> "$GITHUB_ENV"
           echo "Using AGS test data: $GAME_FILE"
 
-      - name: Stage pinned standard Slang pass-through preset
+      - name: Stage pinned standard Slang presets
         shell: bash
         run: |
           mkdir -p smoke-shader
@@ -87,6 +97,13 @@ jobs:
             https://raw.githubusercontent.com/libretro/slang-shaders/4812a82f6c9a11cc8b5a7447040a98c9fc80c00e/stock.slang
           grep -F 'shader0 = stock.slang' smoke-shader/bilinear.slangp
           grep -F '#version 450' smoke-shader/stock.slang
+          cat > smoke-shader/two-pass.slangp <<'EOF'
+          shaders = 2
+          shader0 = stock.slang
+          filter_linear0 = false
+          shader1 = stock.slang
+          filter_linear1 = true
+          EOF
 
       - name: Verify Mesa software OpenGL
         shell: bash
@@ -95,10 +112,41 @@ jobs:
             glxinfo -B | tee glxinfo.txt
           grep -E 'OpenGL (core profile |compatibility profile )?version string:' glxinfo.txt
 
+      - name: Run AGS auto-test without external shader
+        shell: bash
+        run: |
+          set -o pipefail
+          find . -type f -name 'agstest.tap' -delete
+          mkdir -p runtime-home-no-shader runtime-user-no-shader runtime-xdg-no-shader
+          chmod 700 runtime-xdg-no-shader
+          export HOME="$PWD/runtime-home-no-shader"
+          export XDG_RUNTIME_DIR="$PWD/runtime-xdg-no-shader"
+          export SDL_AUDIODRIVER=dummy
+          export LIBGL_ALWAYS_SOFTWARE=1
+          unset AGS_SHADER_CHAIN AGS_SHADER
+
+          timeout 180s xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            ./build/ags \
+              --no-message-box \
+              --windowed \
+              --gfxdriver ogl \
+              --log-stdout=all:info \
+              --user-data-dir "$PWD/runtime-user-no-shader" \
+              "$GAME_FILE" 2>&1 | tee runtime-no-shader.log
+
+          if grep -F 'OGL: external shader requested' runtime-no-shader.log; then
+            echo 'No-shader run unexpectedly requested the external shader context' >&2
+            exit 1
+          fi
+          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"
+          test -n "$TAP_FILE"
+          test -s "$TAP_FILE"
+
       - name: Run AGS auto-test through librashader
         shell: bash
         run: |
           set -o pipefail
+          find . -type f -name 'agstest.tap' -delete
           mkdir -p runtime-home runtime-user runtime-xdg
           chmod 700 runtime-xdg
           export HOME="$PWD/runtime-home"
@@ -131,6 +179,68 @@ jobs:
           test -s "$TAP_FILE"
           echo "AGS auto-test completed: $TAP_FILE"
 
+      - name: Run multipass preset through librashader
+        shell: bash
+        run: |
+          set -o pipefail
+          find . -type f -name 'agstest.tap' -delete
+          mkdir -p runtime-home-multipass runtime-user-multipass runtime-xdg-multipass
+          chmod 700 runtime-xdg-multipass
+          export HOME="$PWD/runtime-home-multipass"
+          export XDG_RUNTIME_DIR="$PWD/runtime-xdg-multipass"
+          export SDL_AUDIODRIVER=dummy
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export LD_LIBRARY_PATH="/tmp/librashader/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export AGS_SHADER_CHAIN="$PWD/smoke-shader/two-pass.slangp"
+
+          timeout 180s xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            ./build/ags \
+              --no-message-box \
+              --windowed \
+              --gfxdriver ogl \
+              --log-stdout=all:info \
+              --user-data-dir "$PWD/runtime-user-multipass" \
+              "$GAME_FILE" 2>&1 | tee runtime-multipass.log
+
+          grep -F 'OGL: loaded shader pipeline:' runtime-multipass.log
+          if grep -E 'shader load failed|AGS librashader frame failed' runtime-multipass.log; then
+            echo 'Multipass librashader runtime reported a failure' >&2
+            exit 1
+          fi
+          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"
+          test -n "$TAP_FILE"
+          test -s "$TAP_FILE"
+
+      - name: Verify OpenGL 3.3 fallback keeps AGS running
+        shell: bash
+        run: |
+          set -o pipefail
+          find . -type f -name 'agstest.tap' -delete
+          mkdir -p runtime-home-fallback runtime-user-fallback runtime-xdg-fallback
+          chmod 700 runtime-xdg-fallback
+          export HOME="$PWD/runtime-home-fallback"
+          export XDG_RUNTIME_DIR="$PWD/runtime-xdg-fallback"
+          export SDL_AUDIODRIVER=dummy
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_GL_VERSION_OVERRIDE=2.1
+          export LD_LIBRARY_PATH="/tmp/librashader/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export AGS_SHADER_CHAIN="$PWD/smoke-shader/bilinear.slangp"
+
+          timeout 180s xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            ./build/ags \
+              --no-message-box \
+              --windowed \
+              --gfxdriver ogl \
+              --log-stdout=all:info \
+              --user-data-dir "$PWD/runtime-user-fallback" \
+              "$GAME_FILE" 2>&1 | tee runtime-fallback.log
+
+          grep -E 'OGL: OpenGL 3\.3 (window|compatibility context) creation failed' runtime-fallback.log
+          grep -F 'OGL: shader load failed: librashader requires OpenGL 3.3+' runtime-fallback.log
+          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"
+          test -n "$TAP_FILE"
+          test -s "$TAP_FILE"
+
       - name: Upload smoke diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -138,6 +248,9 @@ jobs:
           name: librashader-runtime-smoke-diagnostics
           path: |
             runtime-smoke.log
+            runtime-no-shader.log
+            runtime-multipass.log
+            runtime-fallback.log
             glxinfo.txt
             **/agstest.tap
           if-no-files-found: warn
