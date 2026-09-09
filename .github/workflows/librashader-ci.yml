@@ -119,8 +119,8 @@ jobs:
           export AGS_SHADER_CHAIN="$PWD/smoke-shader/bilinear.slangp"
 
           set +e
-          timeout --kill-after=5s 60s \
-            xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            timeout --kill-after=5s 60s \
             ./build/ags \
               --no-message-box \
               --windowed \
@@ -128,8 +128,13 @@ jobs:
               --log-stdout=all:info \
               --user-data-dir "$PWD/runtime-user" \
               "$GAME_FILE" 2>&1 | tee runtime-smoke.log
-          AGS_STATUS=${PIPESTATUS[0]}
+          SMOKE_STATUSES=("${PIPESTATUS[@]}")
+          AGS_STATUS=${SMOKE_STATUSES[0]}
           set -e
+          if [ "${SMOKE_STATUSES[1]}" -ne 0 ]; then
+            echo 'Failed to write runtime smoke log' >&2
+            exit 1
+          fi
 
           case "$AGS_STATUS" in
             0|124|137) ;;
@@ -141,8 +146,9 @@ jobs:
 
           grep -F 'OGL: external shader requested; requesting OpenGL 3.3 compatibility context' runtime-smoke.log
           grep -F 'OGL: loaded shader pipeline:' runtime-smoke.log
+          grep -F 'AGS librashader: first frame completed' runtime-smoke.log
 
-          if grep -E 'shader load failed|AGS librashader frame failed|librashader requires OpenGL 3\.3|OpenGL 3\.3 .* failed' runtime-smoke.log; then
+          if grep -E 'shader load failed|AGS librashader frame failed|AGS librashader: (source/output size mismatch|failed to create)|librashader requires OpenGL 3\.3|OpenGL 3\.3 .* failed' runtime-smoke.log; then
             echo 'librashader runtime reported an error' >&2
             exit 1
           fi

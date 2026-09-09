@@ -667,6 +667,7 @@ void AGSShaderPipeline::Apply(int input_width, int input_height,
     libra_error_t libra_error = _impl->gl_filter_chain_frame(
         &_impl->chain, _impl->frame_count++, input, output,
         &viewport, nullptr, nullptr);
+    const bool first_frame_completed = !libra_error && _impl->frame_count == 1;
 
     if (!libra_error)
     {
@@ -691,6 +692,13 @@ void AGSShaderPipeline::Apply(int input_width, int input_height,
     }
 
     _impl->RestoreHostGLState(host_state);
+    if (first_frame_completed)
+    {
+        // Liveness marker: the filter call and host-state restoration returned.
+        // This does not assert pixel correctness or GPU completion.
+        std::fprintf(stderr, "AGS librashader: first frame completed\n");
+        std::fflush(stderr);
+    }
 #else
     (void)input_width;
     (void)input_height;
