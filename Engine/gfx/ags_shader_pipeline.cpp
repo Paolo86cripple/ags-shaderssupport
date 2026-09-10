@@ -1,37 +1,712 @@
 #include "gfx/ags_shader_pipeline.h"
-#include "gfx/ogl_headers.h"
-#include <SDL.h>
-#include <algorithm>
-#include <cctype>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <fstream>
-#include <sstream>
 
-namespace AGS { namespace Engine { namespace OGL {
-namespace {
-struct V { float x,y,u,v; };
-const V Q[4]={{-1,-1,0,0},{1,-1,1,0},{-1,1,0,1},{1,1,1,1}};
-const char *VS="#version 120\nuniform mat4 MVPMatrix;attribute vec4 VertexCoord;attribute vec2 TexCoord;varying vec4 TEX0;void main(){gl_Position=MVPMatrix*VertexCoord;TEX0=vec4(TexCoord,0.0,1.0);}\n";
-using G=void(*)(GLsizei,GLuint*); using D=void(*)(GLsizei,const GLuint*); using B=void(*)(GLenum,GLuint); using A=void(*)(GLenum,GLenum,GLenum,GLuint,GLint); using C=GLenum(*)(GLenum);
-std::string T(std::string s){size_t a=s.find_first_not_of(" \t\r\n"),b=s.find_last_not_of(" \t\r\n");return a==std::string::npos?std::string():s.substr(a,b-a+1);} std::string L(std::string s){for(char &c:s)c=char(std::tolower((unsigned char)c));return s;} std::string U(std::string s){s=T(s);return s.size()>1&&s.front()=='"'&&s.back()=='"'?s.substr(1,s.size()-2):s;} std::string PD(const std::string&p){size_t n=p.find_last_of("/\\");return n==std::string::npos?".":p.substr(0,n);} std::string JP(const std::string&d,const std::string&p){return p.empty()||p[0]=='/'||(p.size()>1&&p[1]==':')?p:d+"/"+p;} bool S(const std::string&p,const char*e){size_t n=std::strlen(e);return p.size()>=n&&L(p.substr(p.size()-n))==L(e);} bool PB(const std::string&s,bool d){std::string v=L(U(s));return v=="true"||v=="1"?true:v=="false"||v=="0"?false:d;} int PI(const std::string&s,int d){char*e=nullptr;std::string v=U(s);long n=std::strtol(v.c_str(),&e,10);return e&&*e=='\0'?int(n):d;} float PF(const std::string&s,float d){char*e=nullptr;std::string v=U(s);float n=std::strtof(v.c_str(),&e);return e&&*e=='\0'?n:d;} int ST(const std::string&s){std::string v=L(U(s));return v=="viewport"?1:v=="absolute"?2:0;} int DIM(int t,float s,int src,int view){return std::max(1,int(std::lround(t==1?view*s:t==2?s:src*s)));}
-std::string Stage(const std::string&s,const char*d){std::string p="#define "+std::string(d)+"\n";size_t n=s.find("#version");if(n!=std::string::npos){size_t e=s.find('\n',n);if(e!=std::string::npos)return s.substr(0,e+1)+p+s.substr(e+1);}return p+s;} bool Comb(const std::string&s){return s.find("defined(VERTEX)")!=std::string::npos||s.find("defined(FRAGMENT)")!=std::string::npos;}
+#include "gfx/ogl_headers.h"
+
+#include <SDL.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <string>
+
+#if defined(__linux__) && !AGS_OPENGL_ES2
+#include <dlfcn.h>
+#endif
+
+namespace AGS
+{
+namespace Engine
+{
+namespace OGL
+{
+
+#if defined(__linux__) && !AGS_OPENGL_ES2
+
+#ifndef GL_FRAMEBUFFER
+#define GL_FRAMEBUFFER 0x8D40
+#endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
+#ifndef GL_FRAMEBUFFER_COMPLETE
+#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#endif
+#ifndef GL_COLOR_ATTACHMENT0
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER_BINDING
+#define GL_DRAW_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+#ifndef GL_READ_FRAMEBUFFER_BINDING
+#define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+#endif
+#ifndef GL_VERTEX_ARRAY_BINDING
+#define GL_VERTEX_ARRAY_BINDING 0x85B5
+#endif
+#ifndef GL_SAMPLER_BINDING
+#define GL_SAMPLER_BINDING 0x8919
+#endif
+
+namespace
+{
+
+struct _libra_error;
+struct _shader_preset;
+struct _preset_ctx;
+struct _filter_chain_gl;
+struct filter_chain_gl_opt_t;
+struct frame_gl_opt_t;
+
+typedef _libra_error *libra_error_t;
+typedef _shader_preset *libra_shader_preset_t;
+typedef _preset_ctx *libra_preset_ctx_t;
+typedef _filter_chain_gl *libra_gl_filter_chain_t;
+typedef const void *(*libra_gl_loader_t)(const char *);
+
+// Exact ABI-2 C representation used by librashader. This is only the
+// host-side FFI contract; librashader remains external and dynamically loaded.
+enum LIBRA_PRESET_CTX_RUNTIME : uint32_t
+{
+    LIBRA_PRESET_CTX_RUNTIME_NONE = 0,
+    LIBRA_PRESET_CTX_RUNTIME_GL_CORE = 1
+};
+
+struct libra_image_gl_t
+{
+    uint32_t handle;
+    uint32_t format;
+    uint32_t width;
+    uint32_t height;
+};
+
+struct libra_viewport_t
+{
+    float x;
+    float y;
+    uint32_t width;
+    uint32_t height;
+};
+
+typedef size_t (*PFN_libra_instance_abi_version)(void);
+typedef libra_error_t (*PFN_libra_preset_ctx_create)(libra_preset_ctx_t *);
+typedef libra_error_t (*PFN_libra_preset_ctx_free)(libra_preset_ctx_t *);
+typedef libra_error_t (*PFN_libra_preset_ctx_set_runtime)(libra_preset_ctx_t *, LIBRA_PRESET_CTX_RUNTIME);
+typedef libra_error_t (*PFN_libra_preset_create_with_context)(
+    const char *, libra_preset_ctx_t *, libra_shader_preset_t *);
+typedef libra_error_t (*PFN_libra_gl_filter_chain_create)(
+    libra_shader_preset_t *, libra_gl_loader_t, const filter_chain_gl_opt_t *, libra_gl_filter_chain_t *);
+typedef libra_error_t (*PFN_libra_gl_filter_chain_frame)(
+    libra_gl_filter_chain_t *, size_t, libra_image_gl_t, libra_image_gl_t,
+    const libra_viewport_t *, const float *, const frame_gl_opt_t *);
+typedef libra_error_t (*PFN_libra_gl_filter_chain_free)(libra_gl_filter_chain_t *);
+typedef int32_t (*PFN_libra_error_free)(libra_error_t *);
+typedef int32_t (*PFN_libra_error_write)(libra_error_t, char **);
+typedef int32_t (*PFN_libra_error_free_string)(char **);
+
+// AGS' bundled GLAD intentionally exposes only OpenGL 2.1 + EXT FBO.
+// Keep that loader untouched and resolve the small OpenGL 3.x surface required
+// by the librashader bridge directly from the active SDL context.
+typedef void (APIENTRY *PFN_AGS_GL_GEN_FRAMEBUFFERS)(GLsizei, GLuint *);
+typedef void (APIENTRY *PFN_AGS_GL_DELETE_FRAMEBUFFERS)(GLsizei, const GLuint *);
+typedef void (APIENTRY *PFN_AGS_GL_BIND_FRAMEBUFFER)(GLenum, GLuint);
+typedef GLenum (APIENTRY *PFN_AGS_GL_CHECK_FRAMEBUFFER_STATUS)(GLenum);
+typedef void (APIENTRY *PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef void (APIENTRY *PFN_AGS_GL_BLIT_FRAMEBUFFER)(
+    GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+typedef void (APIENTRY *PFN_AGS_GL_BIND_VERTEX_ARRAY)(GLuint);
+typedef void (APIENTRY *PFN_AGS_GL_BIND_SAMPLER)(GLuint, GLuint);
+
+const size_t kLibrashaderAbi = 2;
+
+const void *LoadOpenGLProc(const char *name)
+{
+    return SDL_GL_GetProcAddress(name);
 }
-AGSShaderPipeline::AGSShaderPipeline()=default; AGSShaderPipeline::~AGSShaderPipeline(){Clear();}
-void AGSShaderPipeline::DestroyTarget(Target&t){if(t.fbo&&_delete_fbo)_delete_fbo(1,&t.fbo);if(t.texture)glDeleteTextures(1,&t.texture);t=Target();}
-void AGSShaderPipeline::Clear(){for(auto&p:_passes)if(p.program)glDeleteProgram(p.program);_passes.clear();DestroyTarget(_targets[0]);DestroyTarget(_targets[1]);if(_capture_texture)glDeleteTextures(1,&_capture_texture);_capture_texture=0;}
-bool AGSShaderPipeline::LoadShaderFile(const std::string&p,std::string&s,std::string&e)const{std::ifstream f(p.c_str(),std::ios::binary);if(!f){e="cannot read shader: "+p;return false;}std::ostringstream q;q<<f.rdbuf();s=q.str();if(s.empty()){e="empty shader: "+p;return false;}return true;}
-bool AGSShaderPipeline::CompileShader(unsigned t,const std::string&s,unsigned&sh,std::string&e)const{sh=glCreateShader(t);if(!sh){e="glCreateShader failed";return false;}const char*p=s.c_str();glShaderSource(sh,1,&p,nullptr);glCompileShader(sh);GLint ok=0;glGetShaderiv(sh,GL_COMPILE_STATUS,&ok);if(ok)return true;GLint n=0;glGetShaderiv(sh,GL_INFO_LOG_LENGTH,&n);std::vector<char>log(std::max(1,n));if(n)glGetShaderInfoLog(sh,n,nullptr,log.data());e=log.data();glDeleteShader(sh);sh=0;return false;}
-bool AGSShaderPipeline::CreateProgram(const std::string&v,const std::string&f,unsigned&p,std::string&e)const{unsigned a=0,b=0;if(!CompileShader(GL_VERTEX_SHADER,v,a,e))return false;if(!CompileShader(GL_FRAGMENT_SHADER,f,b,e)){glDeleteShader(a);return false;}p=glCreateProgram();if(!p){glDeleteShader(a);glDeleteShader(b);e="glCreateProgram failed";return false;}glAttachShader(p,a);glAttachShader(p,b);glBindAttribLocation(p,0,"VertexCoord");glBindAttribLocation(p,1,"TexCoord");glLinkProgram(p);glDeleteShader(a);glDeleteShader(b);GLint ok=0;glGetProgramiv(p,GL_LINK_STATUS,&ok);if(ok)return true;GLint n=0;glGetProgramiv(p,GL_INFO_LOG_LENGTH,&n);std::vector<char>log(std::max(1,n));if(n)glGetProgramInfoLog(p,n,nullptr,log.data());e=log.data();glDeleteProgram(p);p=0;return false;}
-bool AGSShaderPipeline::AddPass(const std::string&p,const Pass*preset,std::string&e){std::string s;if(!LoadShaderFile(p,s,e))return false;Pass x;if(preset)x=*preset;x.source_path=p;std::string v=Comb(s)?Stage(s,"VERTEX"):VS,f=Comb(s)?Stage(s,"FRAGMENT"):s;if(!CreateProgram(v,f,x.program,e))return false;x.texture=glGetUniformLocation(x.program,"Texture");if(x.texture<0)x.texture=glGetUniformLocation(x.program,"uTexture");x.texture_size=glGetUniformLocation(x.program,"TextureSize");x.input_size=glGetUniformLocation(x.program,"SourceSize");if(x.input_size<0)x.input_size=glGetUniformLocation(x.program,"InputSize");x.output_size=glGetUniformLocation(x.program,"OutputSize");x.original_size=glGetUniformLocation(x.program,"OriginalSize");x.frame_count=glGetUniformLocation(x.program,"FrameCount");x.frame_direction=glGetUniformLocation(x.program,"FrameDirection");_passes.push_back(x);return true;}
-bool AGSShaderPipeline::ParseChain(const std::string&p,std::vector<std::string>&o,std::string&e)const{std::string s;if(!LoadShaderFile(p,s,e))return false;std::istringstream in(s);std::string l;while(std::getline(in,l)){l=T(l);if(l.compare(0,5,"pass=")==0)o.push_back(JP(PD(p),U(l.substr(5))));}if(o.empty())e="shader chain has no passes: "+p;return !o.empty();}
-bool AGSShaderPipeline::ParsePreset(const std::string&p,std::vector<Pass>&o,std::string&e)const{std::string s;if(!LoadShaderFile(p,s,e))return false;struct E{std::string p;Pass v;};std::vector<E>a;int n=-1;std::istringstream in(s);std::string l;while(std::getline(in,l)){l=T(l);if(l.empty()||l[0]=='#')continue;size_t q=l.find('=');if(q==std::string::npos)continue;std::string k=T(l.substr(0,q)),v=U(l.substr(q+1));if(k=="shaders"){n=PI(v,-1);continue;}if(k.rfind("shader",0)==0&&k.size()>6&&std::isdigit((unsigned char)k[6])){int i=PI(k.substr(6),-1);if(i>=0){if((size_t)i>=a.size())a.resize(i+1);a[i].p=JP(PD(p),v);}continue;}size_t d=k.size();while(d&&std::isdigit((unsigned char)k[d-1]))--d;if(d==k.size())continue;int i=PI(k.substr(d),-1);if(i<0)continue;if((size_t)i>=a.size())a.resize(i+1);std::string b=k.substr(0,d);if(b=="filter_linear")a[i].v.filter_linear=PB(v,false);else if(b=="scale")a[i].v.scale_x=a[i].v.scale_y=PF(v,1);else if(b=="scale_x")a[i].v.scale_x=PF(v,1);else if(b=="scale_y")a[i].v.scale_y=PF(v,1);else if(b=="scale_type")a[i].v.scale_type=ST(v);}if(n<0)n=int(a.size());if(n<=0){e="glslp has no shaders: "+p;return false;}o.clear();for(int i=0;i<n;i++){if(i>=int(a.size())||a[i].p.empty()){e="missing shader"+std::to_string(i);return false;}a[i].v.source_path=a[i].p;o.push_back(a[i].v);}return true;}
-bool AGSShaderPipeline::Load(const std::string&p,std::string&e){Clear();if(S(p,".glslp")){std::vector<Pass>a;if(!ParsePreset(p,a,e))return false;for(auto&x:a)if(!AddPass(x.source_path,&x,e)){Clear();return false;}}else if(S(p,".agschain")){std::vector<std::string>a;if(!ParseChain(p,a,e))return false;for(auto&x:a)if(!AddPass(x,nullptr,e)){Clear();return false;}}else if(!AddPass(p,nullptr,e)){Clear();return false;}return true;}
-bool AGSShaderPipeline::LoadFboFunctions(std::string&e){if(_gen_fbo&&_delete_fbo&&_bind_fbo&&_attach_texture&&_check_fbo)return true;_gen_fbo=(G)SDL_GL_GetProcAddress("glGenFramebuffersEXT");_delete_fbo=(D)SDL_GL_GetProcAddress("glDeleteFramebuffersEXT");_bind_fbo=(B)SDL_GL_GetProcAddress("glBindFramebufferEXT");_attach_texture=(A)SDL_GL_GetProcAddress("glFramebufferTexture2DEXT");_check_fbo=(C)SDL_GL_GetProcAddress("glCheckFramebufferStatusEXT");if(!_gen_fbo||!_delete_fbo||!_bind_fbo||!_attach_texture||!_check_fbo){e="EXT_framebuffer_object unavailable";return false;}return true;}
-bool AGSShaderPipeline::EnsureCaptureTexture(int w,int h,std::string&e){if(_capture_texture&&_capture_width==w&&_capture_height==h)return true;glDeleteTextures(1,&_capture_texture);glGenTextures(1,&_capture_texture);if(!_capture_texture){e="capture texture failed";return false;}glBindTexture(GL_TEXTURE_2D,_capture_texture);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);glBindTexture(GL_TEXTURE_2D,0);_capture_width=w;_capture_height=h;return true;}
-bool AGSShaderPipeline::EnsureTarget(Target&t,int w,int h,bool linear,std::string&e){if(!LoadFboFunctions(e))return false;if(t.fbo&&t.width==w&&t.height==h)return true;DestroyTarget(t);t.width=w;t.height=h;glGenTextures(1,&t.texture);glBindTexture(GL_TEXTURE_2D,t.texture);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,linear?GL_LINEAR:GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,linear?GL_LINEAR:GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);_gen_fbo(1,&t.fbo);_bind_fbo(GL_FRAMEBUFFER_EXT,t.fbo);_attach_texture(GL_FRAMEBUFFER_EXT,GL_COLOR_ATTACHMENT0_EXT,GL_TEXTURE_2D,t.texture,0);if(_check_fbo(GL_FRAMEBUFFER_EXT)!=GL_FRAMEBUFFER_COMPLETE_EXT){e="incomplete shader framebuffer";DestroyTarget(t);_bind_fbo(GL_FRAMEBUFFER_EXT,0);return false;}return true;}
-void AGSShaderPipeline::Apply(int iw,int ih,int ow,int oh){if(_passes.empty()||iw<=0||ih<=0||ow<=0||oh<=0)return;std::string e;if(!EnsureCaptureTexture(ow,oh,e))return;GLint oldfb=0,oldp=0,olda=0,oldaTex=GL_TEXTURE0,oldt=0,oldv[4];glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT,&oldfb);glGetIntegerv(GL_CURRENT_PROGRAM,&oldp);glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&olda);glGetIntegerv(GL_ACTIVE_TEXTURE,&oldaTex);glGetIntegerv(GL_TEXTURE_BINDING_2D,&oldt);glGetIntegerv(GL_VIEWPORT,oldv);GLboolean blend=glIsEnabled(GL_BLEND),depth=glIsEnabled(GL_DEPTH_TEST),sc=glIsEnabled(GL_SCISSOR_TEST);glDisable(GL_BLEND);glDisable(GL_DEPTH_TEST);glDisable(GL_SCISSOR_TEST);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,_capture_texture);glReadBuffer(GL_BACK);glCopyTexSubImage2D(GL_TEXTURE_2D,0,0,0,0,0,ow,oh);unsigned tex=_capture_texture;int sw=ow,sh=oh;for(size_t i=0;i<_passes.size();++i){const Pass&p=_passes[i];bool last=i+1==_passes.size();int w=last?ow:DIM(p.scale_type,p.scale_x,sw,ow),h=last?oh:DIM(p.scale_type,p.scale_y,sh,oh);if(!last){if(!EnsureTarget(_targets[i&1],w,h,p.filter_linear,e))break;_bind_fbo(GL_FRAMEBUFFER_EXT,_targets[i&1].fbo);}else{if(_bind_fbo)_bind_fbo(GL_FRAMEBUFFER_EXT,(unsigned)oldfb);else glBindFramebufferEXT(GL_FRAMEBUFFER_EXT,(unsigned)oldfb);}glViewport(0,0,w,h);glUseProgram(p.program);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,tex);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,p.filter_linear?GL_LINEAR:GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,p.filter_linear?GL_LINEAR:GL_NEAREST);if(p.texture>=0)glUniform1i(p.texture,0);if(p.texture_size>=0)glUniform2f(p.texture_size,float(sw),float(sh));if(p.input_size>=0)glUniform2f(p.input_size,float(sw),float(sh));if(p.output_size>=0)glUniform2f(p.output_size,float(w),float(h));if(p.original_size>=0)glUniform2f(p.original_size,float(iw),float(ih));if(p.frame_count>=0)glUniform1i(p.frame_count,(GLint)_frame_count);if(p.frame_direction>=0)glUniform1i(p.frame_direction,1);GLint m=glGetUniformLocation(p.program,"MVPMatrix");if(m>=0){const GLfloat I[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};glUniformMatrix4fv(m,1,GL_FALSE,I);}glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(V),&Q[0].x);glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(V),&Q[0].u);glDrawArrays(GL_TRIANGLE_STRIP,0,4);glDisableVertexAttribArray(0);glDisableVertexAttribArray(1);if(!last){tex=_targets[i&1].texture;sw=w;sh=h;}}
-if(_bind_fbo)_bind_fbo(GL_FRAMEBUFFER_EXT,(unsigned)oldfb);else glBindFramebufferEXT(GL_FRAMEBUFFER_EXT,(unsigned)oldfb);glUseProgram(oldp);glBindBuffer(GL_ARRAY_BUFFER,olda);glActiveTexture(oldaTex);glBindTexture(GL_TEXTURE_2D,oldt);glViewport(oldv[0],oldv[1],oldv[2],oldv[3]);if(blend)glEnable(GL_BLEND);else glDisable(GL_BLEND);if(depth)glEnable(GL_DEPTH_TEST);else glDisable(GL_DEPTH_TEST);if(sc)glEnable(GL_SCISSOR_TEST);else glDisable(GL_SCISSOR_TEST);++_frame_count;}
-}}}
+
+bool CurrentOpenGLAtLeast(int required_major, int required_minor,
+                          std::string &version_string)
+{
+    const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+    if (!version)
+    {
+        version_string = "unknown";
+        return false;
+    }
+
+    version_string = version;
+    int major = 0;
+    int minor = 0;
+    if (std::sscanf(version, "%d.%d", &major, &minor) != 2)
+        return false;
+
+    return (major > required_major) ||
+           (major == required_major && minor >= required_minor);
+}
+
+template <typename T>
+bool LoadLibrarySymbol(void *library, const char *name, T &out)
+{
+    dlerror();
+    out = reinterpret_cast<T>(dlsym(library, name));
+    return out != nullptr;
+}
+
+template <typename T>
+bool LoadGLSymbol(const char *name, T &out)
+{
+    out = reinterpret_cast<T>(SDL_GL_GetProcAddress(name));
+    return out != nullptr;
+}
+
+} // namespace
+
+struct AGSShaderPipeline::Impl
+{
+    void *library = nullptr;
+    libra_gl_filter_chain_t chain = nullptr;
+
+    GLuint input_texture = 0;
+    GLuint output_texture = 0;
+    GLuint output_fbo = 0;
+    int target_width = 0;
+    int target_height = 0;
+    size_t frame_count = 0;
+    bool frame_error_reported = false;
+
+    PFN_libra_instance_abi_version instance_abi_version = nullptr;
+    PFN_libra_preset_ctx_create preset_ctx_create = nullptr;
+    PFN_libra_preset_ctx_free preset_ctx_free = nullptr;
+    PFN_libra_preset_ctx_set_runtime preset_ctx_set_runtime = nullptr;
+    PFN_libra_preset_create_with_context preset_create_with_context = nullptr;
+    PFN_libra_gl_filter_chain_create gl_filter_chain_create = nullptr;
+    PFN_libra_gl_filter_chain_frame gl_filter_chain_frame = nullptr;
+    PFN_libra_gl_filter_chain_free gl_filter_chain_free = nullptr;
+    PFN_libra_error_free error_free = nullptr;
+    PFN_libra_error_write error_write = nullptr;
+    PFN_libra_error_free_string error_free_string = nullptr;
+
+    PFN_AGS_GL_GEN_FRAMEBUFFERS GenFramebuffers = nullptr;
+    PFN_AGS_GL_DELETE_FRAMEBUFFERS DeleteFramebuffers = nullptr;
+    PFN_AGS_GL_BIND_FRAMEBUFFER BindFramebuffer = nullptr;
+    PFN_AGS_GL_CHECK_FRAMEBUFFER_STATUS CheckFramebufferStatus = nullptr;
+    PFN_AGS_GL_FRAMEBUFFER_TEXTURE_2D FramebufferTexture2D = nullptr;
+    PFN_AGS_GL_BLIT_FRAMEBUFFER BlitFramebuffer = nullptr;
+    PFN_AGS_GL_BIND_VERTEX_ARRAY BindVertexArray = nullptr;
+    PFN_AGS_GL_BIND_SAMPLER BindSampler = nullptr;
+
+    struct HostGLState
+    {
+        GLint draw_fbo = 0;
+        GLint read_fbo = 0;
+        GLint read_buffer = 0;
+        GLint current_program = 0;
+        GLint array_buffer = 0;
+        GLint vertex_array = 0;
+        GLint active_texture = GL_TEXTURE0;
+        GLint active_texture_binding = 0;
+        GLint active_sampler = 0;
+        GLint texture0_binding = 0;
+        GLint sampler0 = 0;
+        GLint viewport[4] = {0, 0, 0, 0};
+    };
+
+    HostGLState CaptureHostGLState()
+    {
+        HostGLState state;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &state.draw_fbo);
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &state.read_fbo);
+        glGetIntegerv(GL_READ_BUFFER, &state.read_buffer);
+        glGetIntegerv(GL_CURRENT_PROGRAM, &state.current_program);
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &state.array_buffer);
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state.vertex_array);
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &state.active_texture);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.active_texture_binding);
+        glGetIntegerv(GL_SAMPLER_BINDING, &state.active_sampler);
+        glGetIntegerv(GL_VIEWPORT, state.viewport);
+
+        if (state.active_texture == GL_TEXTURE0)
+        {
+            state.texture0_binding = state.active_texture_binding;
+            state.sampler0 = state.active_sampler;
+        }
+        else
+        {
+            glActiveTexture(GL_TEXTURE0);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.texture0_binding);
+            glGetIntegerv(GL_SAMPLER_BINDING, &state.sampler0);
+            glActiveTexture(static_cast<GLenum>(state.active_texture));
+        }
+        return state;
+    }
+
+    void RestoreHostGLState(const HostGLState &state)
+    {
+        BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(state.draw_fbo));
+        BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(state.read_fbo));
+        glReadBuffer(static_cast<GLenum>(state.read_buffer));
+        glUseProgram(static_cast<GLuint>(state.current_program));
+        BindVertexArray(static_cast<GLuint>(state.vertex_array));
+        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.array_buffer));
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.texture0_binding));
+        BindSampler(0, static_cast<GLuint>(state.sampler0));
+
+        if (state.active_texture != GL_TEXTURE0)
+        {
+            const GLuint active_unit = static_cast<GLuint>(state.active_texture - GL_TEXTURE0);
+            glActiveTexture(static_cast<GLenum>(state.active_texture));
+            glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.active_texture_binding));
+            BindSampler(active_unit, static_cast<GLuint>(state.active_sampler));
+        }
+        else
+        {
+            glActiveTexture(GL_TEXTURE0);
+        }
+
+        glViewport(state.viewport[0], state.viewport[1],
+                   state.viewport[2], state.viewport[3]);
+    }
+
+    std::string ConsumeError(libra_error_t error)
+    {
+        if (!error)
+            return std::string();
+
+        std::string message("librashader error");
+        char *raw = nullptr;
+        if (error_write && error_write(error, &raw) == 0 && raw)
+        {
+            message = raw;
+            if (error_free_string)
+                error_free_string(&raw);
+        }
+
+        if (error_free)
+            error_free(&error);
+        return message;
+    }
+
+    bool LoadModernGL(std::string &error)
+    {
+#define LOAD_GL_SYMBOL(member, symbol) \
+        if (!LoadGLSymbol(symbol, member)) \
+        { \
+            error = std::string("OpenGL 3.x entry point unavailable: ") + symbol; \
+            return false; \
+        }
+
+        LOAD_GL_SYMBOL(GenFramebuffers, "glGenFramebuffers");
+        LOAD_GL_SYMBOL(DeleteFramebuffers, "glDeleteFramebuffers");
+        LOAD_GL_SYMBOL(BindFramebuffer, "glBindFramebuffer");
+        LOAD_GL_SYMBOL(CheckFramebufferStatus, "glCheckFramebufferStatus");
+        LOAD_GL_SYMBOL(FramebufferTexture2D, "glFramebufferTexture2D");
+        LOAD_GL_SYMBOL(BlitFramebuffer, "glBlitFramebuffer");
+        LOAD_GL_SYMBOL(BindVertexArray, "glBindVertexArray");
+        LOAD_GL_SYMBOL(BindSampler, "glBindSampler");
+#undef LOAD_GL_SYMBOL
+        return true;
+    }
+
+    void ResetLibrarySymbols()
+    {
+        instance_abi_version = nullptr;
+        preset_ctx_create = nullptr;
+        preset_ctx_free = nullptr;
+        preset_ctx_set_runtime = nullptr;
+        preset_create_with_context = nullptr;
+        gl_filter_chain_create = nullptr;
+        gl_filter_chain_frame = nullptr;
+        gl_filter_chain_free = nullptr;
+        error_free = nullptr;
+        error_write = nullptr;
+        error_free_string = nullptr;
+    }
+
+    bool ResolveLibrarySymbols(std::string &error)
+    {
+#define LOAD_LIBRA_SYMBOL(member, symbol) \
+        if (!LoadLibrarySymbol(library, symbol, member)) \
+        { \
+            error = std::string("missing librashader symbol: ") + symbol; \
+            return false; \
+        }
+
+        LOAD_LIBRA_SYMBOL(instance_abi_version, "libra_instance_abi_version");
+        const size_t abi = instance_abi_version();
+        if (abi != kLibrashaderAbi)
+        {
+            error = "unsupported librashader ABI " + std::to_string(abi) +
+                    " (AGS shader backend expects ABI " + std::to_string(kLibrashaderAbi) + ")";
+            return false;
+        }
+
+        LOAD_LIBRA_SYMBOL(preset_ctx_create, "libra_preset_ctx_create");
+        LOAD_LIBRA_SYMBOL(preset_ctx_free, "libra_preset_ctx_free");
+        LOAD_LIBRA_SYMBOL(preset_ctx_set_runtime, "libra_preset_ctx_set_runtime");
+        LOAD_LIBRA_SYMBOL(preset_create_with_context, "libra_preset_create_with_context");
+        LOAD_LIBRA_SYMBOL(gl_filter_chain_create, "libra_gl_filter_chain_create");
+        LOAD_LIBRA_SYMBOL(gl_filter_chain_frame, "libra_gl_filter_chain_frame");
+        LOAD_LIBRA_SYMBOL(gl_filter_chain_free, "libra_gl_filter_chain_free");
+        LOAD_LIBRA_SYMBOL(error_free, "libra_error_free");
+        LOAD_LIBRA_SYMBOL(error_write, "libra_error_write");
+        LOAD_LIBRA_SYMBOL(error_free_string, "libra_error_free_string");
+#undef LOAD_LIBRA_SYMBOL
+        return true;
+    }
+
+    bool OpenLibrary(std::string &error)
+    {
+        if (library)
+            return true;
+
+        // Prefer the canonical ABI-2 SONAME. The unversioned symlink may
+        // point to a future ABI after an host update; keep searching for
+        // an installed ABI-2 library rather than failing on that symlink.
+        const char *candidates[] = {
+            "librashader.so.2",
+            "librashader.so"
+        };
+
+        std::string attempts;
+        for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i)
+        {
+            ResetLibrarySymbols();
+            dlerror();
+            library = dlopen(candidates[i], RTLD_NOW | RTLD_LOCAL);
+            if (!library)
+            {
+                const char *dl_error = dlerror();
+                if (!attempts.empty()) attempts += "; ";
+                attempts += candidates[i];
+                attempts += ": ";
+                attempts += (dl_error && dl_error[0]) ? dl_error : "not found";
+                continue;
+            }
+
+            std::string candidate_error;
+            if (ResolveLibrarySymbols(candidate_error))
+                return true;
+
+            if (!attempts.empty()) attempts += "; ";
+            attempts += candidates[i];
+            attempts += ": ";
+            attempts += candidate_error;
+            dlclose(library);
+            library = nullptr;
+        }
+
+        ResetLibrarySymbols();
+        error = "cannot load compatible librashader ABI 2";
+        if (!attempts.empty())
+            error += " (" + attempts + ")";
+        return false;
+    }
+
+    void DestroyTargets()
+    {
+        if (output_fbo && DeleteFramebuffers)
+            DeleteFramebuffers(1, &output_fbo);
+        if (output_texture)
+            glDeleteTextures(1, &output_texture);
+        if (input_texture)
+            glDeleteTextures(1, &input_texture);
+
+        output_fbo = 0;
+        output_texture = 0;
+        input_texture = 0;
+        target_width = 0;
+        target_height = 0;
+    }
+
+    bool EnsureTargets(int width, int height, std::string &error)
+    {
+        if (input_texture && output_texture && output_fbo &&
+            target_width == width && target_height == height)
+            return true;
+
+        DestroyTargets();
+
+        glGenTextures(1, &input_texture);
+        glBindTexture(GL_TEXTURE_2D, input_texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+        glGenTextures(1, &output_texture);
+        glBindTexture(GL_TEXTURE_2D, output_texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+        GenFramebuffers(1, &output_fbo);
+        BindFramebuffer(GL_FRAMEBUFFER, output_fbo);
+        FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                             GL_TEXTURE_2D, output_texture, 0);
+
+        if (CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            error = "failed to create librashader output framebuffer";
+            DestroyTargets();
+            return false;
+        }
+
+        target_width = width;
+        target_height = height;
+        return true;
+    }
+
+    void CloseLibrary()
+    {
+        if (library)
+            dlclose(library);
+        library = nullptr;
+        ResetLibrarySymbols();
+    }
+};
+
+#else
+
+struct AGSShaderPipeline::Impl
+{
+};
+
+#endif
+
+AGSShaderPipeline::AGSShaderPipeline()
+    : _impl(new Impl())
+{
+}
+
+AGSShaderPipeline::~AGSShaderPipeline()
+{
+    Clear();
+    delete _impl;
+    _impl = nullptr;
+}
+
+bool AGSShaderPipeline::IsLoaded() const
+{
+#if defined(__linux__) && !AGS_OPENGL_ES2
+    return _impl && _impl->chain != nullptr;
+#else
+    return false;
+#endif
+}
+
+bool AGSShaderPipeline::Load(const std::string &path, std::string &error)
+{
+    Clear();
+
+#if !defined(__linux__) || AGS_OPENGL_ES2
+    (void)path;
+    error = "librashader backend is currently available only on Linux desktop OpenGL";
+    return false;
+#else
+    std::string gl_version;
+    if (!CurrentOpenGLAtLeast(3, 3, gl_version))
+    {
+        error = "librashader requires OpenGL 3.3+ (current context: " + gl_version + ")";
+        return false;
+    }
+
+    if (!_impl->LoadModernGL(error))
+        return false;
+
+    if (!_impl->OpenLibrary(error))
+    {
+        _impl->CloseLibrary();
+        return false;
+    }
+
+    libra_preset_ctx_t context = nullptr;
+    libra_error_t libra_error = _impl->preset_ctx_create(&context);
+    if (libra_error)
+    {
+        error = _impl->ConsumeError(libra_error);
+        _impl->CloseLibrary();
+        return false;
+    }
+
+    libra_error = _impl->preset_ctx_set_runtime(
+        &context, LIBRA_PRESET_CTX_RUNTIME_GL_CORE);
+    if (libra_error)
+    {
+        error = _impl->ConsumeError(libra_error);
+        _impl->preset_ctx_free(&context);
+        _impl->CloseLibrary();
+        return false;
+    }
+
+    libra_shader_preset_t preset = nullptr;
+    libra_error = _impl->preset_create_with_context(
+        path.c_str(), &context, &preset);
+    if (libra_error)
+    {
+        error = _impl->ConsumeError(libra_error);
+        if (context)
+            _impl->preset_ctx_free(&context);
+        _impl->CloseLibrary();
+        return false;
+    }
+
+    // preset_create_with_context consumes the context.
+    context = nullptr;
+
+    libra_error = _impl->gl_filter_chain_create(
+        &preset, LoadOpenGLProc, nullptr, &_impl->chain);
+    if (libra_error)
+    {
+        error = _impl->ConsumeError(libra_error);
+        _impl->chain = nullptr;
+        _impl->CloseLibrary();
+        return false;
+    }
+
+    _impl->frame_count = 0;
+    _impl->frame_error_reported = false;
+    return true;
+#endif
+}
+
+void AGSShaderPipeline::Clear()
+{
+#if defined(__linux__) && !AGS_OPENGL_ES2
+    if (!_impl)
+        return;
+
+    if (_impl->chain && _impl->gl_filter_chain_free)
+    {
+        libra_error_t error = _impl->gl_filter_chain_free(&_impl->chain);
+        if (error)
+            _impl->ConsumeError(error);
+    }
+    _impl->chain = nullptr;
+
+    _impl->DestroyTargets();
+    _impl->CloseLibrary();
+    _impl->frame_count = 0;
+    _impl->frame_error_reported = false;
+#endif
+}
+
+void AGSShaderPipeline::Apply(int input_width, int input_height,
+                              int output_width, int output_height)
+{
+#if defined(__linux__) && !AGS_OPENGL_ES2
+    if (!_impl || !_impl->chain ||
+        input_width <= 0 || input_height <= 0 ||
+        output_width <= 0 || output_height <= 0)
+        return;
+
+    // The current AGS integration feeds the completed backbuffer, therefore
+    // input and output dimensions are expected to match. Keep the guard here
+    // until the renderer exposes a separate logical-source texture.
+    if (input_width != output_width || input_height != output_height)
+    {
+        if (!_impl->frame_error_reported)
+        {
+            std::fprintf(stderr,
+                         "AGS librashader: source/output size mismatch (%dx%d -> %dx%d)\n",
+                         input_width, input_height, output_width, output_height);
+            _impl->frame_error_reported = true;
+        }
+        return;
+    }
+
+    const Impl::HostGLState host_state = _impl->CaptureHostGLState();
+    glActiveTexture(GL_TEXTURE0);
+
+    std::string target_error;
+    if (!_impl->EnsureTargets(output_width, output_height, target_error))
+    {
+        if (!_impl->frame_error_reported)
+        {
+            std::fprintf(stderr, "AGS librashader: %s\n", target_error.c_str());
+            _impl->frame_error_reported = true;
+        }
+        _impl->RestoreHostGLState(host_state);
+        return;
+    }
+
+    // Capture the already-rendered AGS backbuffer as librashader's source.
+    _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(host_state.read_fbo));
+    glReadBuffer(static_cast<GLenum>(host_state.read_buffer));
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, _impl->input_texture);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0,
+                        output_width, output_height);
+
+    const libra_image_gl_t input = {
+        static_cast<uint32_t>(_impl->input_texture),
+        static_cast<uint32_t>(GL_RGBA8),
+        static_cast<uint32_t>(output_width),
+        static_cast<uint32_t>(output_height)
+    };
+    const libra_image_gl_t output = {
+        static_cast<uint32_t>(_impl->output_texture),
+        static_cast<uint32_t>(GL_RGBA8),
+        static_cast<uint32_t>(output_width),
+        static_cast<uint32_t>(output_height)
+    };
+    const libra_viewport_t viewport = {
+        0.0f, 0.0f,
+        static_cast<uint32_t>(output_width),
+        static_cast<uint32_t>(output_height)
+    };
+
+    libra_error_t libra_error = _impl->gl_filter_chain_frame(
+        &_impl->chain, _impl->frame_count++, input, output,
+        &viewport, nullptr, nullptr);
+    const bool first_frame_completed = !libra_error && _impl->frame_count == 1;
+
+    if (!libra_error)
+    {
+        // librashader renders to a caller-owned texture. Copy the completed
+        // texture back to the framebuffer AGS is about to present.
+        _impl->BindFramebuffer(GL_READ_FRAMEBUFFER, _impl->output_fbo);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        _impl->BindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(host_state.draw_fbo));
+        _impl->BlitFramebuffer(0, 0, output_width, output_height,
+                               0, 0, output_width, output_height,
+                               GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+    else if (!_impl->frame_error_reported)
+    {
+        const std::string message = _impl->ConsumeError(libra_error);
+        std::fprintf(stderr, "AGS librashader frame failed: %s\n", message.c_str());
+        _impl->frame_error_reported = true;
+    }
+    else
+    {
+        _impl->ConsumeError(libra_error);
+    }
+
+    _impl->RestoreHostGLState(host_state);
+    if (first_frame_completed)
+    {
+        // Liveness marker: the filter call and host-state restoration returned.
+        // This does not assert pixel correctness or GPU completion.
+        std::fprintf(stderr, "AGS librashader: first frame completed\n");
+        std::fflush(stderr);
+    }
+#else
+    (void)input_width;
+    (void)input_height;
+    (void)output_width;
+    (void)output_height;
+#endif
+}
+
+} // namespace OGL
+} // namespace Engine
+} // namespace AGS

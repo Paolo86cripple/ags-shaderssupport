@@ -1,0 +1,233 @@
+name: Librashader CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: librashader-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Build and runtime smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            cmake g++ git pkg-config curl unzip \
+            xvfb xauth mesa-utils libgl1-mesa-dri \
+            gnome-desktop-testing \
+            libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
+            libusb-1.0-0-dev libx11-dev libxext-dev libxrandr-dev \
+            libxcursor-dev libxfixes-dev libxi-dev libxss-dev \
+            libwayland-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+            libdbus-1-dev libibus-1.0-dev libudev-dev fcitx-libs-dev
+
+      - name: Configure AGS
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAGS_BUILD_TOOLS=OFF \
+            -DAGS_TESTS=OFF \
+            -DAGS_BUILTIN_PLUGINS=OFF \
+            -DSDL_PIPEWIRE=OFF
+
+      - name: Build AGS
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Build librashader 0.12.0
+        shell: bash
+        run: |
+          git clone --depth 1 --branch librashader-v0.12.0 \
+            https://github.com/SnowflakePowered/librashader.git /tmp/librashader
+          cd /tmp/librashader
+          cargo build \
+            --package librashader-capi \
+            --release \
+            --no-default-features \
+            --features runtime-opengl
+
+          test -f target/release/liblibrashader_capi.so
+          cp target/release/liblibrashader_capi.so target/release/librashader.so.2
+          ln -sf librashader.so.2 target/release/librashader.so
+
+      - name: Prepare smoke assets
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/ags3-auto-test.zip \
+            https://github.com/adventuregamestudio/ags-test-games/releases/download/v0.5.11/ags3-auto-test.zip
+          echo '9ba43e2e3f0b1b7e799f56117e43c9763b22f95c58654b39dfd98825f3f5bb18  /tmp/ags3-auto-test.zip' | sha256sum --check --strict
+
+          mkdir -p test-game smoke-shader
+          unzip -q /tmp/ags3-auto-test.zip -d test-game
+          GAME_FILE="$(find test-game -type f -name '*.ags' -print -quit)"
+          test -n "$GAME_FILE"
+          printf 'GAME_FILE=%s\n' "$GAME_FILE" >> "$GITHUB_ENV"
+
+          curl --fail --location --retry 3 \
+            --output smoke-shader/bilinear.slangp \
+            https://raw.githubusercontent.com/libretro/slang-shaders/4812a82f6c9a11cc8b5a7447040a98c9fc80c00e/bilinear.slangp
+          curl --fail --location --retry 3 \
+            --output smoke-shader/stock.slang \
+            https://raw.githubusercontent.com/libretro/slang-shaders/4812a82f6c9a11cc8b5a7447040a98c9fc80c00e/stock.slang
+
+          grep -F 'shader0 = stock.slang' smoke-shader/bilinear.slangp
+
+      - name: Verify software OpenGL
+        shell: bash
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 \
+            xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            glxinfo -B | tee glxinfo.txt
+
+          grep -E 'OpenGL (core profile |compatibility profile )?version string:' glxinfo.txt
+
+      - name: Run legacy OpenGL runtime smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f legacy-smoke.log
+          find . -type f -name 'agstest.tap' -delete
+
+          mkdir -p legacy-home legacy-user legacy-xdg
+          chmod 700 legacy-xdg
+
+          export HOME="$PWD/legacy-home"
+          export XDG_RUNTIME_DIR="$PWD/legacy-xdg"
+          export SDL_AUDIODRIVER=dummy
+          export LIBGL_ALWAYS_SOFTWARE=1
+          unset AGS_SHADER_CHAIN
+          unset AGS_SHADER
+
+          set +e
+          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            timeout --kill-after=5s 60s \
+            ./build/ags \
+              --no-message-box \
+              --windowed \
+              --gfxdriver ogl \
+              --log-stdout=all:info \
+              --user-data-dir "$PWD/legacy-user" \
+              "$GAME_FILE" 2>&1 | tee legacy-smoke.log
+          SMOKE_STATUSES=("${PIPESTATUS[@]}")
+          AGS_STATUS=${SMOKE_STATUSES[0]}
+          set -e
+          if [ "${SMOKE_STATUSES[1]}" -ne 0 ]; then
+            echo 'Failed to write legacy smoke log' >&2
+            exit 1
+          fi
+
+          case "$AGS_STATUS" in
+            0|124|137) ;;
+            *)
+              echo "AGS legacy smoke exited unexpectedly with status $AGS_STATUS" >&2
+              exit "$AGS_STATUS"
+              ;;
+          esac
+
+          if grep -F 'OGL: external shader requested; requesting OpenGL 3.3 compatibility context' legacy-smoke.log; then
+            echo 'Legacy AGS unexpectedly requested OpenGL 3.3' >&2
+            exit 1
+          fi
+
+          if grep -F 'OGL: loaded shader pipeline:' legacy-smoke.log; then
+            echo 'Legacy AGS unexpectedly loaded librashader' >&2
+            exit 1
+          fi
+
+          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"
+          test -n "$TAP_FILE"
+          test -s "$TAP_FILE"
+          grep -Eq '^ok[[:space:]]+[0-9]+' "$TAP_FILE"
+
+          echo "legacy OpenGL runtime smoke passed (AGS status: $AGS_STATUS)"
+          echo "TAP progress file: $TAP_FILE"
+
+      - name: Run librashader runtime smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f runtime-smoke.log
+          find . -type f -name 'agstest.tap' -delete
+
+          mkdir -p runtime-home runtime-user runtime-xdg
+          chmod 700 runtime-xdg
+
+          export HOME="$PWD/runtime-home"
+          export XDG_RUNTIME_DIR="$PWD/runtime-xdg"
+          export SDL_AUDIODRIVER=dummy
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export LD_LIBRARY_PATH="/tmp/librashader/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export AGS_SHADER_CHAIN="$PWD/smoke-shader/bilinear.slangp"
+
+          set +e
+          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            timeout --kill-after=5s 60s \
+            ./build/ags \
+              --no-message-box \
+              --windowed \
+              --gfxdriver ogl \
+              --log-stdout=all:info \
+              --user-data-dir "$PWD/runtime-user" \
+              "$GAME_FILE" 2>&1 | tee runtime-smoke.log
+          SMOKE_STATUSES=("${PIPESTATUS[@]}")
+          AGS_STATUS=${SMOKE_STATUSES[0]}
+          set -e
+          if [ "${SMOKE_STATUSES[1]}" -ne 0 ]; then
+            echo 'Failed to write runtime smoke log' >&2
+            exit 1
+          fi
+
+          case "$AGS_STATUS" in
+            0|124|137) ;;
+            *)
+              echo "AGS exited unexpectedly with status $AGS_STATUS" >&2
+              exit "$AGS_STATUS"
+              ;;
+          esac
+
+          grep -F 'OGL: external shader requested; requesting OpenGL 3.3 compatibility context' runtime-smoke.log
+          grep -F 'OGL: loaded shader pipeline:' runtime-smoke.log
+          grep -F 'AGS librashader: first frame completed' runtime-smoke.log
+
+          if grep -E 'shader load failed|AGS librashader frame failed|AGS librashader: (source/output size mismatch|failed to create)|librashader requires OpenGL 3\.3|OpenGL 3\.3 .* failed' runtime-smoke.log; then
+            echo 'librashader runtime reported an error' >&2
+            exit 1
+          fi
+
+          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"
+          test -n "$TAP_FILE"
+          test -s "$TAP_FILE"
+          grep -Eq '^ok[[:space:]]+[0-9]+' "$TAP_FILE"
+
+          echo "librashader runtime smoke passed (AGS status: $AGS_STATUS)"
+          echo "TAP progress file: $TAP_FILE"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: librashader-ci-diagnostics
+          path: |
+            runtime-smoke.log
+            legacy-smoke.log
+            glxinfo.txt
+            **/agstest.tap
+          if-no-files-found: warn

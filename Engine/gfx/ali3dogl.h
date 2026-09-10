@@ -500,6 +500,9 @@ private:
     BackbufferState *_currentBackbuffer = nullptr;
 
     AGSShaderPipeline _shaderPipeline;
+    // External shaders are allowed only if the shader-requested GL 3.3 path
+    // succeeded. A legacy 2.1 fallback must continue without librashader.
+    bool _allowExternalShader = false;
 
     // Sprite batches (parent scene nodes)
     OGLSpriteBatches _spriteBatches;

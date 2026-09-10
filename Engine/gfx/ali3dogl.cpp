@@ -225,18 +225,28 @@ bool OGLGraphicsDriver::FirstTimeInit()
         return false;
     }
 
-    // Development bootstrap for the native Libretro-compatible shader pipeline.
+    // Development bootstrap for the native librashader pipeline.
     // The launcher will eventually provide this path via the game's profile.
     const char *shader_path = std::getenv("AGS_SHADER_CHAIN");
     if (!shader_path || shader_path[0] == '\0')
         shader_path = std::getenv("AGS_SHADER");
     if (shader_path && shader_path[0] != '\0')
     {
-        std::string shader_error;
-        if (!_shaderPipeline.Load(shader_path, shader_error))
-            Debug::Printf(kDbgMsg_Warn, "OGL: shader load failed: %s", shader_error.c_str());
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+        if (!_allowExternalShader)
+        {
+            Debug::Printf(kDbgMsg_Warn,
+                "OGL: external shader disabled because OpenGL 3.3 compatibility context is unavailable");
+        }
         else
-            Debug::Printf(kDbgMsg_Info, "OGL: loaded shader pipeline: %s", shader_path);
+#endif
+        {
+            std::string shader_error;
+            if (!_shaderPipeline.Load(shader_path, shader_error))
+                Debug::Printf(kDbgMsg_Warn, "OGL: shader load failed: %s", shader_error.c_str());
+            else
+                Debug::Printf(kDbgMsg_Info, "OGL: loaded shader pipeline: %s", shader_path);
+        }
     }
 
     _firstTimeInit = true;
@@ -287,21 +297,45 @@ void OGLGraphicsDriver::InitGlParams(const DisplayMode &mode)
 
 bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
 {
-  // First setup GL attributes before creating SDL GL window
-  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY) != 0)
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_PROFILE_MASK: %s", SDL_GetError());
-  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2) != 0)
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MAJOR_VERSION: %s", SDL_GetError());
-#if AGS_OPENGL_ES2
-    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0) != 0)
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MINOR_VERSION: %s", SDL_GetError());
-    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_EGL, 1) != 0) {
-        Debug::Printf(kDbgMsg_Warn, "Error occured setting attribute SDL_GL_CONTEXT_EGL: %s", SDL_GetError());
-    }
-#else
-  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1) != 0)
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MINOR_VERSION: %s", SDL_GetError());
+  _allowExternalShader = false;
+
+  // First setup GL attributes before creating SDL GL window.
+  // Preserve AGS' legacy OpenGL 2.1 context unless the Linux desktop shader
+  // bridge is explicitly requested. librashader's OpenGL backend requires 3.3+.
+  bool shader_gl33_requested = false;
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  const char *shader_path = std::getenv("AGS_SHADER_CHAIN");
+  if (!shader_path || shader_path[0] == '\0')
+    shader_path = std::getenv("AGS_SHADER");
+  shader_gl33_requested = shader_path && shader_path[0] != '\0';
 #endif
+
+  const auto set_gl_context_version = [](int major, int minor) {
+    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY) != 0)
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_PROFILE_MASK: %s", SDL_GetError());
+    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major) != 0)
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MAJOR_VERSION: %s", SDL_GetError());
+    if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor) != 0)
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_CONTEXT_MINOR_VERSION: %s", SDL_GetError());
+  };
+
+#if AGS_OPENGL_ES2
+  set_gl_context_version(2, 0);
+  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_EGL, 1) != 0) {
+    Debug::Printf(kDbgMsg_Warn, "Error occured setting attribute SDL_GL_CONTEXT_EGL: %s", SDL_GetError());
+  }
+#else
+  if (shader_gl33_requested)
+  {
+    set_gl_context_version(3, 3);
+    Debug::Printf(kDbgMsg_Info, "OGL: external shader requested; requesting OpenGL 3.3 compatibility context");
+  }
+  else
+  {
+    set_gl_context_version(2, 1);
+  }
+#endif
+
   // minimum number of bits for the depth buffer
   if (SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0) != 0)
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_DEPTH_SIZE: %s", SDL_GetError());
@@ -315,6 +349,17 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error occured setting attribute SDL_GL_DOUBLEBUFFER: %s", SDL_GetError());
 
   SDL_Window *sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  if (!sdl_window && shader_gl33_requested)
+  {
+    Debug::Printf(kDbgMsg_Warn,
+      "OGL: OpenGL 3.3 window creation failed (%s); retrying legacy OpenGL 2.1 without external shaders",
+      SDL_GetError());
+    set_gl_context_version(2, 1);
+    shader_gl33_requested = false;
+    sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+  }
+#endif
   if (!sdl_window)
   {
     Debug::Printf(kDbgMsg_Error, "Error opening window for OpenGL: %s", SDL_GetError());
@@ -322,6 +367,30 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
   }
 
   SDL_GLContext sdlgl_ctx = SDL_GL_CreateContext(sdl_window);
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  if (sdlgl_ctx == NULL && shader_gl33_requested)
+  {
+    Debug::Printf(kDbgMsg_Warn,
+      "OGL: OpenGL 3.3 compatibility context creation failed (%s); retrying legacy OpenGL 2.1 without external shaders",
+      SDL_GetError());
+
+    // Recreate the window after changing the requested GL version. On some
+    // platforms the pixel format chosen for a GL window depends on attributes
+    // set before window creation, so retrying on the same SDL_Window is unsafe.
+    sys_window_destroy();
+    sdl_window = nullptr;
+    set_gl_context_version(2, 1);
+    shader_gl33_requested = false;
+
+    sdl_window = sys_window_create("", mode.DisplayIndex, mode.Width, mode.Height, mode.Mode, SDL_WINDOW_OPENGL);
+    if (!sdl_window)
+    {
+      Debug::Printf(kDbgMsg_Error, "Error reopening window for OpenGL 2.1 fallback: %s", SDL_GetError());
+      return false;
+    }
+    sdlgl_ctx = SDL_GL_CreateContext(sdl_window);
+  }
+#endif
   if (sdlgl_ctx == NULL) {
     Debug::Printf(kDbgMsg_Error, "Error creating OpenGL context: %s", SDL_GetError());
     sys_window_destroy();
@@ -341,8 +410,13 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
 #else
   if (!gladLoadGL()) {
     Debug::Printf(kDbgMsg_Error, "Failed to load GL.");
+    SDL_GL_DeleteContext(sdlgl_ctx);
+    sys_window_destroy();
     return false;
   }
+#endif
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  _allowExternalShader = shader_gl33_requested;
 #endif
   _sdlWindow = sdl_window;
   _sdlGlContext = sdlgl_ctx;
@@ -365,6 +439,7 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
 
 void OGLGraphicsDriver::DeleteWindowAndGlContext()
 {
+  _allowExternalShader = false;
   SDL_GL_MakeCurrent(nullptr, nullptr);
   if (_sdlGlContext) {
     SDL_GL_DeleteContext(_sdlGlContext);
