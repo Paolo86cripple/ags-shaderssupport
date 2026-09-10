@@ -80,8 +80,6 @@ target_sources(engine
     ac/dynobj/cc_serializer.h
     ac/dynobj/dynobj_manager.cpp
     ac/dynobj/dynobj_manager.h
-    ac/dynobj/managedobjectpool.cpp
-    ac/dynobj/managedobjectpool.h
     ac/dynobj/scriptaudiochannel.h
     ac/dynobj/scriptcamera.cpp
     ac/dynobj/scriptcamera.h
@@ -175,8 +173,6 @@ target_sources(engine
     ac/global_palette.h
     ac/global_region.cpp
     ac/global_region.h
-    ac/global_room.cpp
-    ac/global_room.h
     ac/global_screen.cpp
     ac/global_screen.h
     ac/global_slider.cpp
