@@ -175,7 +175,7 @@ public:
         return _modes.size();
     }
 
-    bool GetMode(int index, DisplayMode &mode) override
+    bool GetMode(int index, DisplayMode &mode) const override
     {
         if (index >= 0 && (size_t)index < _modes.size())
         {
