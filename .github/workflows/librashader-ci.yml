@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   apply-fallback-fix:
-    if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+    if: github.event_name == 'push'
     name: Apply guarded fallback source fix
     runs-on: ubuntu-24.04
     permissions:
