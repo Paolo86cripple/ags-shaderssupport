@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/librashader-runtime
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -101,6 +102,67 @@ jobs:
 
           grep -E 'OpenGL (core profile |compatibility profile )?version string:' glxinfo.txt
 
+      - name: Run legacy OpenGL runtime smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f legacy-smoke.log
+          find . -type f -name 'agstest.tap' -delete
+
+          mkdir -p legacy-home legacy-user legacy-xdg
+          chmod 700 legacy-xdg
+
+          export HOME="$PWD/legacy-home"
+          export XDG_RUNTIME_DIR="$PWD/legacy-xdg"
+          export SDL_AUDIODRIVER=dummy
+          export LIBGL_ALWAYS_SOFTWARE=1
+          unset AGS_SHADER_CHAIN
+          unset AGS_SHADER
+
+          set +e
+          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' \
+            timeout --kill-after=5s 60s \
+            ./build/ags \
+              --no-message-box \
+              --windowed \
+              --gfxdriver ogl \
+              --log-stdout=all:info \
+              --user-data-dir "$PWD/legacy-user" \
+              "$GAME_FILE" 2>&1 | tee legacy-smoke.log
+          SMOKE_STATUSES=("${PIPESTATUS[@]}")
+          AGS_STATUS=${SMOKE_STATUSES[0]}
+          set -e
+          if [ "${SMOKE_STATUSES[1]}" -ne 0 ]; then
+            echo 'Failed to write legacy smoke log' >&2
+            exit 1
+          fi
+
+          case "$AGS_STATUS" in
+            0|124|137) ;;
+            *)
+              echo "AGS legacy smoke exited unexpectedly with status $AGS_STATUS" >&2
+              exit "$AGS_STATUS"
+              ;;
+          esac
+
+          if grep -F 'OGL: external shader requested; requesting OpenGL 3.3 compatibility context' legacy-smoke.log; then
+            echo 'Legacy AGS unexpectedly requested OpenGL 3.3' >&2
+            exit 1
+          fi
+
+          if grep -F 'OGL: loaded shader pipeline:' legacy-smoke.log; then
+            echo 'Legacy AGS unexpectedly loaded librashader' >&2
+            exit 1
+          fi
+
+          TAP_FILE="$(find . -type f -name 'agstest.tap' -print -quit)"
+          test -n "$TAP_FILE"
+          test -s "$TAP_FILE"
+          grep -Eq '^ok[[:space:]]+[0-9]+' "$TAP_FILE"
+
+          echo "legacy OpenGL runtime smoke passed (AGS status: $AGS_STATUS)"
+          echo "TAP progress file: $TAP_FILE"
+
       - name: Run librashader runtime smoke
         shell: bash
         run: |
@@ -168,6 +230,7 @@ jobs:
           name: librashader-ci-diagnostics
           path: |
             runtime-smoke.log
+            legacy-smoke.log
             glxinfo.txt
             **/agstest.tap
           if-no-files-found: warn
