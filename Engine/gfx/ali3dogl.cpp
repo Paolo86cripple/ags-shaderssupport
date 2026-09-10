@@ -232,11 +232,21 @@ bool OGLGraphicsDriver::FirstTimeInit()
         shader_path = std::getenv("AGS_SHADER");
     if (shader_path && shader_path[0] != '\0')
     {
-        std::string shader_error;
-        if (!_shaderPipeline.Load(shader_path, shader_error))
-            Debug::Printf(kDbgMsg_Warn, "OGL: shader load failed: %s", shader_error.c_str());
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+        if (!_allowExternalShader)
+        {
+            Debug::Printf(kDbgMsg_Warn,
+                "OGL: external shader disabled because OpenGL 3.3 compatibility context is unavailable");
+        }
         else
-            Debug::Printf(kDbgMsg_Info, "OGL: loaded shader pipeline: %s", shader_path);
+#endif
+        {
+            std::string shader_error;
+            if (!_shaderPipeline.Load(shader_path, shader_error))
+                Debug::Printf(kDbgMsg_Warn, "OGL: shader load failed: %s", shader_error.c_str());
+            else
+                Debug::Printf(kDbgMsg_Info, "OGL: loaded shader pipeline: %s", shader_path);
+        }
     }
 
     _firstTimeInit = true;
@@ -287,6 +297,8 @@ void OGLGraphicsDriver::InitGlParams(const DisplayMode &mode)
 
 bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
 {
+  _allowExternalShader = false;
+
   // First setup GL attributes before creating SDL GL window.
   // Preserve AGS' legacy OpenGL 2.1 context unless the Linux desktop shader
   // bridge is explicitly requested. librashader's OpenGL backend requires 3.3+.
@@ -403,6 +415,9 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
     return false;
   }
 #endif
+#if AGS_PLATFORM_OS_LINUX && !AGS_OPENGL_ES2
+  _allowExternalShader = shader_gl33_requested;
+#endif
   _sdlWindow = sdl_window;
   _sdlGlContext = sdlgl_ctx;
 #if AGS_PLATFORM_OS_IOS
@@ -424,6 +439,7 @@ bool OGLGraphicsDriver::CreateWindowAndGlContext(const DisplayMode &mode)
 
 void OGLGraphicsDriver::DeleteWindowAndGlContext()
 {
+  _allowExternalShader = false;
   SDL_GL_MakeCurrent(nullptr, nullptr);
   if (_sdlGlContext) {
     SDL_GL_DeleteContext(_sdlGlContext);
