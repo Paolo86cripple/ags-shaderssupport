@@ -206,8 +206,17 @@ jobs:
           ldd "$BUNDLE_DIR/ags"
           ldd "$BUNDLE_DIR/librashader.so.2"
 
-          "$BUNDLE_DIR/run-with-shader.sh" 2>&1 | grep -F 'Usage:'
-          "$BUNDLE_DIR/run-no-shader.sh" 2>&1 | grep -F 'Usage:'
+          set +e
+          SHADER_USAGE="$($BUNDLE_DIR/run-with-shader.sh 2>&1)"
+          SHADER_STATUS=$?
+          NO_SHADER_USAGE="$($BUNDLE_DIR/run-no-shader.sh 2>&1)"
+          NO_SHADER_STATUS=$?
+          set -e
+
+          test "$SHADER_STATUS" -eq 2
+          test "$NO_SHADER_STATUS" -eq 2
+          grep -F 'Usage:' <<< "$SHADER_USAGE"
+          grep -F 'Usage:' <<< "$NO_SHADER_USAGE"
 
           find "$BUNDLE_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
 
