@@ -1,0 +1,224 @@
+name: Build AGS Shader Injector
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'injector/**'
+      - '.github/workflows/build-shader-injector.yml'
+      - 'LICENSE'
+      - 'COPYING'
+      - 'THIRD_PARTY.md'
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned Libretro GLSL shaders
+        uses: actions/checkout@v4
+        with:
+          repository: libretro/glsl-shaders
+          ref: 235448f244bf676d135f7b25ea6b8e1eae41c4e4
+          path: upstream-glsl-shaders
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ pkg-config libsdl2-dev libgl1-mesa-dev libpng-dev libjpeg-dev xvfb
+
+      - name: Configure
+        run: cmake -S injector -B build/injector -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/injector --config Release --parallel
+
+      - name: Smoke test identity shader
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/identity.glsl
+
+      - name: Smoke test OpenGL state isolation
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/identity.glsl state
+
+      - name: Smoke test Libretro GLSL ABI
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/libretro-identity.glsl
+
+      - name: Smoke test multipass chain
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/invert-chain.agschain invert
+
+      - name: Smoke test PassPrev texture history
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/passprev-chain.agschain
+
+      - name: Smoke test canonical RetroArch frame references
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-refs.glslp
+
+      - name: Smoke test RetroArch frame and LUT texture coordinates
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-coords.glslp
+
+      - name: Smoke test RetroArch GL2 POT FBO semantics
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-pot.glslp
+
+      - name: Smoke test RetroArch global uniforms and capability macros
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-globals.glsl
+
+      - name: Smoke test permissive frame_count_mod parsing
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-frame-mod.glslp frame_mod
+
+      - name: Smoke test PARAMETER_UNIFORM preset override
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-parameter.glslp
+
+      - name: Smoke test recursive GLSLP references and overlays
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/reference-main.glslp
+
+      - name: Load pinned real ScaleFX rAA AA presets
+        run: |
+          xvfb-run -a ./build/injector/ags-shader-load-test \
+            'upstream-glsl-shaders/presets/scalefx+rAA+aa.glslp' \
+            'upstream-glsl-shaders/presets/scalefx+rAA+aa-fast.glslp'
+
+      - name: Smoke test GLSL preset loader
+        run: |
+          mkdir -p /tmp/ags-shader-glslp
+          cp injector/shaders/identity.glsl /tmp/ags-shader-glslp/
+          printf 'shaders = 1\nshader0 = identity.glsl\nfilter_linear0 = false\nscale_type0 = source\nscale0 = 1.0\n' > /tmp/ags-shader-glslp/test.glslp
+          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-glslp/test.glslp
+
+      - name: Smoke test advanced GLSLP pass settings
+        run: |
+          mkdir -p /tmp/ags-shader-glslp-advanced
+          cp injector/shaders/identity.glsl /tmp/ags-shader-glslp-advanced/
+          cat > /tmp/ags-shader-glslp-advanced/float.glslp <<'EOF'
+          shaders = 2
+          shader0 = identity.glsl
+          shader1 = identity.glsl
+          alias0 = FIRST
+          wrap_mode0 = repeat
+          filter_linear0 = false
+          float_framebuffer0 = true
+          scale_type0 = source
+          scale0 = 1.0
+          wrap_mode1 = clamp_to_edge
+          filter_linear1 = false
+          EOF
+          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-glslp-advanced/float.glslp
+          cat > /tmp/ags-shader-glslp-advanced/srgb.glslp <<'EOF'
+          shaders = 2
+          shader0 = identity.glsl
+          shader1 = identity.glsl
+          alias0 = FIRST
+          wrap_mode0 = mirrored_repeat
+          srgb_framebuffer0 = true
+          scale_type0 = source
+          scale0 = 1.0
+          wrap_mode1 = clamp_to_edge
+          filter_linear1 = false
+          EOF
+          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-glslp-advanced/srgb.glslp
+
+      - name: Smoke test GLSLP aliases and parameters
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/alias-parameter.glslp
+
+      - name: Smoke test external PNG LUT mipmap and load-state isolation
+        run: |
+          mkdir -p /tmp/ags-shader-lut
+          cp injector/shaders/lut-test.glsl /tmp/ags-shader-lut/
+          python3 - <<'PY'
+          import struct, zlib
+          def chunk(kind, data):
+              return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+          raw = b'\x00\x20\x40\x80\xff'
+          png = b'\x89PNG\r\n\x1a\n'
+          png += chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0))
+          png += chunk(b'IDAT', zlib.compress(raw))
+          png += chunk(b'IEND', b'')
+          open('/tmp/ags-shader-lut/lut.png', 'wb').write(png)
+          PY
+          cat > /tmp/ags-shader-lut/test.glslp <<'EOF'
+          shaders = 1
+          shader0 = lut-test.glsl
+          textures = "TESTLUT"
+          TESTLUT = "lut.png"
+          TESTLUT_linear = false
+          TESTLUT_mipmap = true
+          EOF
+          xvfb-run -a ./build/injector/ags-shader-pipeline-test /tmp/ags-shader-lut/test.glslp state
+
+      - name: Smoke test canonical PrevTexture history
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-prev.glsl prev
+
+      - name: Smoke test canonical FeedbackTexture feedback_pass
+        run: xvfb-run -a ./build/injector/ags-shader-pipeline-test injector/shaders/retroarch-feedback.glslp feedback
+
+      - name: Verify pinned upstream-invalid 3dfx preset
+        shell: bash
+        run: |
+          set -euo pipefail
+          preset='upstream-glsl-shaders/cel/presets/MMJ_Cel_Shader_3dfx.glslp'
+          stale='upstream-glsl-shaders/3dfx/shaders/3dfx_pass_0.glsl'
+          actual='upstream-glsl-shaders/gpu/shaders/3dfx/3dfx_pass_0.glsl'
+          test -f "$preset"
+          test ! -e "$stale"
+          test -f "$actual"
+          set +e
+          xvfb-run -a ./build/injector/ags-shader-load-test "$preset"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          echo "XFAIL(upstream): ${preset} references removed ../../3dfx/shaders paths; actual files are under gpu/shaders/3dfx"
+
+      - name: Sweep every usable pinned Libretro GLSLP preset
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -o pipefail
+          broken='upstream-glsl-shaders/cel/presets/MMJ_Cel_Shader_3dfx.glslp'
+          total=$(find upstream-glsl-shaders -type f -name '*.glslp' | wc -l)
+          count=$(find upstream-glsl-shaders -type f -name '*.glslp' ! -path "$broken" | wc -l)
+          echo "Strict compatibility sweep: ${count}/${total} usable GLSLP presets (+1 pinned upstream XFAIL)"
+          test "$count" -gt 0
+          xvfb-run -a bash -c '
+            set -o pipefail
+            find upstream-glsl-shaders -type f -name "*.glslp" \
+              ! -path "upstream-glsl-shaders/cel/presets/MMJ_Cel_Shader_3dfx.glslp" -print0 \
+              | sort -z \
+              | xargs -0 -r -n 64 ./build/injector/ags-shader-load-test
+          '
+
+      - name: Sweep every pinned Libretro GLSL source
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -o pipefail
+          count=$(find upstream-glsl-shaders -type f -name '*.glsl' | wc -l)
+          echo "Strict source sweep: ${count} GLSL shaders"
+          test "${count}" -gt 0
+          xvfb-run -a bash -c '
+            set -o pipefail
+            find upstream-glsl-shaders -type f -name "*.glsl" -print0 \
+              | sort -z \
+              | xargs -0 -r -n 64 ./build/injector/ags-shader-load-test
+          '
+
+      - name: Prepare per-game add-on
+        run: |
+          mkdir -p dist/ags-shader/shaders
+          cp build/injector/libags-shader.so dist/ags-shader/
+          cp injector/run-with-shader.sh dist/ags-shader/
+          cp injector/README.md dist/ags-shader/
+          cp LICENSE COPYING THIRD_PARTY.md dist/ags-shader/
+          cp injector/shaders/* dist/ags-shader/shaders/
+
+      - name: Upload single artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ags-shader-linux-x86_64
+          path: dist/ags-shader
+          if-no-files-found: error
+          compression-level: 6

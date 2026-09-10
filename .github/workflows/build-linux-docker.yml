@@ -1,0 +1,52 @@
+name: Build Linux Docker Image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ags-linux-builder-image
+  BASE_BRANCH: master
+
+jobs:
+  build-and-push-linux:
+    name: Build and Push Linux ${{ matrix.platform.arch }}
+    runs-on: ${{ matrix.platform.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - { arch: amd64, os: ubuntu-latest }
+        - { arch: i386,  os: ubuntu-latest }
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd #v4
+
+      - name: Build and push ${{ matrix.platform.arch }} image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f #v7
+        with:
+          context: ci/linux
+          file: ci/linux/Dockerfile
+          platforms: linux/${{ matrix.platform.arch }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.BASE_BRANCH }}-${{ matrix.platform.arch }}
+          build-args: |
+            FROM_PLATFORM=linux/${{ matrix.platform.arch }}
+            FROM_DEBIAN=debian/eol:jessie
