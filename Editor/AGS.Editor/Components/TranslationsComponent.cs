@@ -1,17 +1,11 @@
 using AGS.Types;
-using ScintillaNET;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Web.Util;
 using System.Windows.Forms;
-using static System.Net.Mime.MediaTypeNames;
-using static System.Windows.Forms.Design.AxImporter;
-using static System.Windows.Forms.LinkLabel;
 
 namespace AGS.Editor.Components
 {
@@ -24,6 +18,7 @@ namespace AGS.Editor.Components
         private const string COMMAND_UPDATE_SOURCE = "UpdateTranslation";
         private const string COMMAND_UPDATE_ALL = "UpdateAllTranslations";
         private const string COMMAND_COMPILE = "CompileTranslation";
+        private const string COMMAND_COMPILE_ALL = "CompileAllTranslations";
         private const string COMMAND_MAKE_DEFAULT = "MakeDefaultTranslation";
 
         private const string COMPILED_TRANSLATION_FILE_SIGNATURE = "AGSTranslation\0";
@@ -181,23 +176,24 @@ namespace AGS.Editor.Components
         private void WriteExtFontOverrides(BinaryWriter bw, Translation translation, CompileMessages errors)
         {
             bw.Write(translation.FontOverrides.Count);
-            foreach (var fontOverride in translation.FontOverrides)
+            // data version (matches current game data); determines which font info extensions are written
+            bw.Write(NativeConstants.GAME_DATA_VERSION_CURRENT);
+
+            foreach (var overrideEntry in translation.FontOverrides)
             {
-                bw.Write(fontOverride.Key); // font to override
-                var font = fontOverride.Value; // font to override with
-                bw.Write(font.ID);
-                // ID >= 0 means a replacement is another built-in font
-                // ID < 0 means a replacement is a runtime-generated font
-                if (font.ID < 0)
-                {
-                    DataFileWriter.WriteFontInfo(bw, font);
-                    // NOTE: we write 3.6.0 extension right away, because this TRA
-                    // extension is introduced later. But if there will be more
-                    // font extensions, then we must have a distinct ext in TRA as well!
-                    DataFileWriter.WriteFontInfo_Ex360(bw, font);
-                    // Explicit font's filename: this corresponds to 4.* font's FileName.
-                    DataFileWriter.FilePutString(font.ProjectFilename, bw);
-                }
+                var fontOverride = overrideEntry.Value;
+                var font = fontOverride.Font; // font to override with
+                var fields = fontOverride.Fields; // valid fields
+
+                bw.Write(overrideEntry.Key); // font to override
+                bw.Write(font.ID); // replacement font ID (or -1 if font is determined by its filename)
+                bw.Write((int)fields); // which font fields are valid
+                bw.Write((int)0); // reserved field (more flags?)
+                // Font data, format matches various font-related sections of the main game file
+                DataFileWriter.WriteFontInfo(bw, font);
+                DataFileWriter.WriteFontInfo_Ex360(bw, font);
+                // Explicit font's filename: this corresponds to 4.* font's FileName ("v400_fontfiles" ext).
+                DataFileWriter.FilePutString(font.ProjectFilename, bw);
             }
         }
 
@@ -584,6 +580,24 @@ namespace AGS.Editor.Components
             return messages;
         }
 
+        private void CompileTranslations(IList<Translation> translations)
+        {
+            var errors = new CompileMessages();
+            foreach (var translation in translations)
+            {
+                try
+                {
+                    CompileTranslation(translation, errors);
+                }
+                catch (Exception e)
+                {
+                    errors.Add(new CompileError(e.Message));
+                }
+            }
+
+            _guiController.PostOutputAndReportErrors(errors, "Translation(s) compiled", true);
+        }
+
         public override void CommandClick(string controlID)
         {
             if (controlID == COMMAND_NEW_ITEM)
@@ -629,24 +643,13 @@ namespace AGS.Editor.Components
             }
             else if (controlID == COMMAND_COMPILE)
             {
-                CompileMessages errors = new CompileMessages();
-                try
-                {
-                    CompileTranslation(_itemRightClicked, errors);
-                }
-                catch (Exception e)
-                {
-                    errors.Add(new CompileError(e.Message));
-                }
-                if (errors.Count > 0)
-                {
-                    _guiController.ShowMessage(string.Format("Translation compiled with errors: \n\n{0}",
-                        errors[0].Message), MessageBoxIcon.Warning);
-                }
-                else
-                {
-                    _guiController.ShowMessage("Translation compiled successfully.", MessageBoxIcon.Information);
-                }
+                List<Translation> translations = new List<Translation>();
+                translations.Add(_itemRightClicked);
+                CompileTranslations(translations);
+            }
+            else if (controlID == COMMAND_COMPILE_ALL)
+            {
+                CompileTranslations(_agsEditor.CurrentGame.Translations);
             }
             else if (controlID == COMMAND_DELETE_ITEM)
             {
@@ -688,6 +691,7 @@ namespace AGS.Editor.Components
             if (controlID == TOP_LEVEL_COMMAND_ID)
             {
                 menu.Add(new MenuCommand(COMMAND_UPDATE_ALL, "Update all", null));
+                menu.Add(new MenuCommand(COMMAND_COMPILE_ALL, "Compile all", null));
                 menu.Add(MenuCommand.Separator);
                 menu.Add(new MenuCommand(COMMAND_NEW_ITEM, "New translation", null));
 
