@@ -20,7 +20,7 @@ jobs:
           ref: feature/librashader-runtime
 
       - name: Apply guarded source patch
-        shell: python
+        shell: python {0}
         run: |
           from pathlib import Path
 
