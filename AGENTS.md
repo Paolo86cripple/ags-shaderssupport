@@ -58,6 +58,11 @@ These rules are deliberate project decisions and should not be changed casually.
    - When hardware testing is required, provide a workflow that produces the exact test artifact and then give instructions only for downloading/running that artifact and collecting logs/results.
    - Hardware-test artifacts should bundle the exact AGS runtime and librashader runtime they were built against so the user does not need to install or build librashader locally.
 
+9. **Use the maximum reasoning and review effort available for this project.**
+   - For architecture, rendering correctness, compatibility, security, CI/release gates and AGS Shader Launcher work, optimize for correctness and evidence rather than speed or brevity.
+   - Before declaring non-trivial work complete, perform a second-pass review focused on edge cases, failure modes, regressions and consistency between code, tests, workflows and this contract.
+   - Do not reduce review depth merely because a change appears small when it touches OpenGL context creation, shader state, runtime loading, launcher behavior or release-critical paths.
+
 ---
 
 ## Current architecture
@@ -274,6 +279,7 @@ For shader-related work:
 9. For graphics/context changes, have GitHub Actions produce a downloadable test artifact and validate that artifact on real hardware before declaring the work release-ready.
 10. Hardware-test bundles should contain launch helpers that set the bundled librashader path and shader environment automatically; local setup should be limited to executable permissions if needed and running the supplied scripts.
 11. Update this `AGENTS.md` whenever roadmap status, architecture decisions, validation coverage, build policy, or known limitations materially change.
+12. For non-trivial AGS shader or Shader Launcher work, use the highest available reasoning/review effort and perform an adversarial second pass before relying on CI or hardware validation.
 
 Do not mark roadmap items complete from code inspection alone when they require runtime or hardware validation.
 
