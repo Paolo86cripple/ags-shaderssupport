@@ -8,8 +8,10 @@ Current integration state:
 
 - `master` contains the merged native librashader runtime.
 - PR #1 — **Integrate librashader into native AGS OpenGL pipeline** — was squash-merged on 2026-09-10.
-- Merge commit: `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
-- Current post-merge work branch: `feature/test-bundle-workflow`.
+- PR #1 merge commit: `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
+- PR #2 — **Build downloadable AGS + librashader hardware test bundle** — was squash-merged on 2026-09-10.
+- PR #2 merge commit: `f28dd252fd1b62750e6e7c8ee19b8f2616ecd96a`.
+- Current active phase: post-merge real-hardware validation using workflow-produced artifacts.
 
 The goal is to add RetroArch-style `.slangp` shader preset support to the native AGS OpenGL renderer through **librashader**, while preserving AGS' existing behavior when shaders are not requested or cannot be used.
 
@@ -107,11 +109,15 @@ Last roadmap update: **2026-09-10**
 - [x] Complete final code/scope review of PR #1.
 - [x] Pass final CI run #20 on head `6c4079691aecbb4defee734a64fc94492831d44e`.
 - [x] Squash-merge PR #1 into `master` as `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
-- [x] Extend `Build Native AGS Shaders Linux` to build a self-contained hardware-test bundle containing AGS, librashader 0.12.0 and no-shader/shader launch helpers.
+- [x] Extend `Build Native AGS Shaders Linux` to build a hardware-test bundle containing AGS, librashader 0.12.0 and no-shader/shader launch helpers.
+- [x] Pass `Build Native AGS Shaders Linux` run #6 on PR #2 head `d38180c3d6ebc5ff10a051818c424b36f9bea2c0`.
+- [x] Produce artifact `ags-librashader-test-linux-x86_64` from run #6 (artifact ID `10158737290`, SHA-256 digest `551d6483041b14c49753cde5323eff1650d77e7b7b2e24a763753efe0bb85fce`).
+- [x] Pass full `Librashader CI` run #21 for PR #2, including legacy and shader runtime smoke tests.
+- [x] Squash-merge PR #2 into `master` as `f28dd252fd1b62750e6e7c8ee19b8f2616ecd96a`.
 
 ### Current CI baseline
 
-The final validated PR run successfully completed all of these steps:
+The validated shader CI successfully covers:
 
 - AGS configure
 - AGS build
@@ -122,11 +128,20 @@ The final validated PR run successfully completed all of these steps:
 - librashader runtime smoke
 - diagnostic artifact upload
 
+The hardware-test workflow additionally covers:
+
+- AGS Release build from this fork
+- librashader 0.12.0 OpenGL C-API build
+- bundle staging
+- AGS/librashader binary presence and dynamic dependency inspection
+- launcher argument/usage validation
+- downloadable artifact upload
+
 This is the minimum regression baseline future shader-related changes should preserve.
 
 **Build policy:** all future builds and automated validation for this project must run in GitHub Actions. Real-hardware testing must use workflow-produced artifacts rather than locally compiled binaries.
 
-**Hardware-test bundle policy:** `Build Native AGS Shaders Linux` is the manual workflow for real-hardware validation. Its artifact must contain the forked AGS runtime, the matching librashader 0.12.0 OpenGL C-API runtime, build metadata and launch helpers. The user should only download, extract and run this artifact locally.
+**Hardware-test bundle policy:** `Build Native AGS Shaders Linux` is the manual workflow for real-hardware validation. Its artifact contains the forked AGS runtime, matching librashader 0.12.0 OpenGL C-API runtime, build metadata and launch helpers. The user should only download, extract and run this artifact locally.
 
 ---
 
@@ -139,7 +154,9 @@ Status: **merged and functionally complete in CI; post-merge hardware validation
 Remaining work:
 
 - [x] Add a GitHub Actions workflow that produces a downloadable AGS + librashader real-hardware test bundle.
-- [ ] Successfully run that bundle workflow from the current branch/master and download its artifact.
+- [x] Successfully run the bundle workflow and produce a downloadable artifact.
+- [ ] Run the workflow from `master` for the hardware-validation build to be tested locally.
+- [ ] Download/extract the workflow artifact on the CachyOS test machine.
 - [ ] Test that workflow-produced artifact on a real Linux desktop GPU rather than only Mesa software rendering/Xvfb.
 - [ ] Verify AMD/Mesa hardware behavior on CachyOS/KDE.
 - [ ] Verify no-shader behavior on real hardware.
@@ -201,6 +218,7 @@ Only begin release packaging after the core runtime path is validated on real ha
 - [x] Mark PR #1 ready for review.
 - [x] Resolve merge-blocking review findings.
 - [x] Merge the librashader runtime work.
+- [x] Add and validate the workflow-produced AGS + librashader hardware-test bundle.
 - [ ] Complete post-merge AMDGPU/CachyOS hardware validation using workflow-produced artifacts.
 - [ ] Define supported librashader runtime/package strategy for Linux distributions.
 - [ ] Add Arch/CachyOS-oriented packaging through GitHub Actions.
@@ -263,15 +281,16 @@ Do not mark roadmap items complete from code inspection alone when they require 
 
 ## Post-merge definition of done for the librashader runtime
 
-The core integration is merged into the user's fork. Before release or upstream submission, require:
+The core integration and hardware-test workflow are merged into the user's fork. Before release or upstream submission, require:
 
 - [x] AGS builds successfully in GitHub Actions.
 - [x] No-shader legacy OpenGL smoke passes in GitHub Actions.
 - [x] librashader single-pass runtime smoke passes in GitHub Actions.
 - [x] Shader-requested OpenGL 3.3 path is isolated to Linux desktop.
 - [x] OpenGL 2.1 fallback disables external shader initialization.
-- [x] Final PR code/scope review completed.
+- [x] Final PR #1 code/scope review completed.
 - [x] PR #1 merged into `master`.
+- [x] Hardware-test bundle workflow validated and PR #2 merged into `master`.
 - [ ] Workflow-produced real Linux hardware test artifact passes on AMDGPU/CachyOS.
 - [ ] Windowed/fullscreen/resize/Alt-Tab behavior is validated on hardware.
 - [ ] The **ScaleFX + RAA + AA** stress preset is validated on hardware.
