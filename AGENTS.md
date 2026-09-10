@@ -4,13 +4,11 @@
 
 This repository is the working fork for **Adventure Game Studio shader support**.
 
-Current active branch:
+Current integration state:
 
-- `feature/librashader-runtime`
-
-Current pull request:
-
-- PR #1 — **Integrate librashader into native AGS OpenGL pipeline**
+- `master` contains the merged native librashader runtime.
+- PR #1 — **Integrate librashader into native AGS OpenGL pipeline** — was squash-merged on 2026-09-10.
+- Merge commit: `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
 
 The goal is to add RetroArch-style `.slangp` shader preset support to the native AGS OpenGL renderer through **librashader**, while preserving AGS' existing behavior when shaders are not requested or cannot be used.
 
@@ -49,6 +47,12 @@ These rules are deliberate project decisions and should not be changed casually.
 7. **Prefer minimal, reviewable changes.**
    - Avoid unrelated cleanup or refactors in shader commits.
    - Keep compatibility behavior explicit and testable.
+
+8. **Do not compile or build this project locally.**
+   - AGS, librashader integration builds, automated tests, packaging builds and reproducible artifacts must be produced through GitHub Actions workflows.
+   - Local machines are for running and validating workflow-produced binaries/artifacts on real hardware, not for compiling the project.
+   - Do not ask the user to run local `cmake`, compiler, Cargo, linker or packaging commands for this project.
+   - When hardware testing is required, provide a workflow that produces the exact test artifact and then give instructions only for downloading/running that artifact and collecting logs/results.
 
 ---
 
@@ -96,10 +100,15 @@ Last roadmap update: **2026-09-10**
 - [x] Pass Mesa software OpenGL verification under Xvfb.
 - [x] Pass legacy OpenGL runtime smoke with no shader configured.
 - [x] Pass librashader runtime smoke, including shader loading and first completed filter call.
+- [x] Restore six unrelated workflow files that had accidentally appeared as deletions in PR #1.
+- [x] Verify that the four `Engine/CMakeLists.txt` source entries retained by PR #1 are required: removing them caused the AGS build to fail.
+- [x] Complete final code/scope review of PR #1.
+- [x] Pass final CI run #20 on head `6c4079691aecbb4defee734a64fc94492831d44e`.
+- [x] Squash-merge PR #1 into `master` as `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
 
 ### Current CI baseline
 
-The latest validated PR run successfully completed all of these steps:
+The final validated PR run successfully completed all of these steps:
 
 - AGS configure
 - AGS build
@@ -112,23 +121,30 @@ The latest validated PR run successfully completed all of these steps:
 
 This is the minimum regression baseline future shader-related changes should preserve.
 
+**Build policy:** all future builds and automated validation for this project must run in GitHub Actions. Real-hardware testing must use workflow-produced artifacts rather than locally compiled binaries.
+
 ---
 
 ## Roadmap
 
 ### Phase 1 — Core librashader integration
 
-Status: **functionally complete in CI; hardware validation still required**.
+Status: **merged and functionally complete in CI; post-merge hardware validation still required before release/upstream submission**.
 
 Remaining work:
 
-- [ ] Test on a real Linux desktop GPU rather than only Mesa software rendering/Xvfb.
-- [ ] Verify AMD/Mesa hardware behavior on a normal desktop session.
+- [ ] Produce a downloadable real-hardware test artifact through GitHub Actions.
+- [ ] Test that workflow-produced artifact on a real Linux desktop GPU rather than only Mesa software rendering/Xvfb.
+- [ ] Verify AMD/Mesa hardware behavior on CachyOS/KDE.
+- [ ] Verify no-shader behavior on real hardware.
+- [ ] Verify a simple single-pass shader on real hardware.
+- [ ] Run the definitive complex stress preset: **ScaleFX + RAA + AA**.
 - [ ] Verify windowed mode.
 - [ ] Verify fullscreen mode.
 - [ ] Verify resize and display-mode changes.
 - [ ] Verify repeated mode/context recreation does not leave stale shader resources.
-- [ ] Confirm shader-disabled fallback behavior on a system/context where OpenGL 3.3 creation is intentionally unavailable or forced to fail.
+- [ ] Verify repeated Alt-Tab/context transitions under KDE Wayland.
+- [ ] Confirm shader-disabled fallback behavior on a system/context where OpenGL 3.3 creation is intentionally unavailable or forced to fail, if a deterministic hardware test is practical.
 - [ ] Test at least one real AGS game in addition to the automated test game.
 
 ### Phase 2 — Shader preset compatibility
@@ -175,14 +191,15 @@ The environment variables are currently a development/bootstrap interface.
 
 Only begin release packaging after the core runtime path is validated on real hardware.
 
-- [ ] Finish review of PR #1.
-- [ ] Mark PR #1 ready for review after hardware/runtime validation is satisfactory.
-- [ ] Resolve review findings.
-- [ ] Merge the librashader runtime work.
+- [x] Finish review of PR #1.
+- [x] Mark PR #1 ready for review.
+- [x] Resolve merge-blocking review findings.
+- [x] Merge the librashader runtime work.
+- [ ] Complete post-merge AMDGPU/CachyOS hardware validation using workflow-produced artifacts.
 - [ ] Define supported librashader runtime/package strategy for Linux distributions.
-- [ ] Add Arch/CachyOS-oriented packaging.
+- [ ] Add Arch/CachyOS-oriented packaging through GitHub Actions.
 - [ ] Document runtime dependencies and optional shader assets.
-- [ ] Produce a reproducible release build.
+- [ ] Produce a reproducible release build through GitHub Actions.
 - [ ] Add release notes describing compatibility and fallback behavior.
 
 ---
@@ -225,28 +242,31 @@ For shader-related work:
 2. Keep individual commits narrow and reversible.
 3. Review the resulting diff for unrelated changes before relying on CI.
 4. Preserve the no-shader OpenGL path.
-5. Run/build the AGS target.
-6. Run the legacy no-shader smoke.
-7. Run the librashader shader smoke.
-8. For graphics/context changes, perform real-hardware testing before declaring the work complete.
-9. Update this `AGENTS.md` whenever roadmap status, architecture decisions, validation coverage, or known limitations materially change.
+5. Build AGS only through GitHub Actions workflows.
+6. Run the legacy no-shader automated smoke only through GitHub Actions.
+7. Run the librashader automated shader smoke only through GitHub Actions.
+8. Do not require or instruct the user to compile AGS, librashader, Rust/Cargo dependencies or packaging locally.
+9. For graphics/context changes, have GitHub Actions produce a downloadable test artifact and validate that artifact on real hardware before declaring the work release-ready.
+10. Update this `AGENTS.md` whenever roadmap status, architecture decisions, validation coverage, build policy, or known limitations materially change.
 
 Do not mark roadmap items complete from code inspection alone when they require runtime or hardware validation.
 
 ---
 
-## Definition of done for the current PR
+## Post-merge definition of done for the librashader runtime
 
-PR #1 may be considered ready for final review when:
+The core integration is merged into the user's fork. Before release or upstream submission, require:
 
-- [x] AGS builds successfully.
-- [x] No-shader legacy OpenGL smoke passes.
-- [x] librashader single-pass runtime smoke passes.
+- [x] AGS builds successfully in GitHub Actions.
+- [x] No-shader legacy OpenGL smoke passes in GitHub Actions.
+- [x] librashader single-pass runtime smoke passes in GitHub Actions.
 - [x] Shader-requested OpenGL 3.3 path is isolated to Linux desktop.
 - [x] OpenGL 2.1 fallback disables external shader initialization.
-- [ ] Real Linux hardware test passes.
-- [ ] Windowed/fullscreen/resize behavior is validated.
-- [ ] At least one representative multi-pass preset is validated.
-- [ ] Remaining PR diff receives a final code review.
+- [x] Final PR code/scope review completed.
+- [x] PR #1 merged into `master`.
+- [ ] Workflow-produced real Linux hardware test artifact passes on AMDGPU/CachyOS.
+- [ ] Windowed/fullscreen/resize/Alt-Tab behavior is validated on hardware.
+- [ ] The **ScaleFX + RAA + AA** stress preset is validated on hardware.
+- [ ] At least one representative real AGS game is validated.
 
-Until these remaining checks are complete, keep the PR as a draft.
+Hardware validation is a release/upstream gate, not a prerequisite for the already-completed merge into the user's fork.
