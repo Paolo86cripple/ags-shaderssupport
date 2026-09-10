@@ -9,6 +9,7 @@ Current integration state:
 - `master` contains the merged native librashader runtime.
 - PR #1 — **Integrate librashader into native AGS OpenGL pipeline** — was squash-merged on 2026-09-10.
 - Merge commit: `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
+- Current post-merge work branch: `feature/test-bundle-workflow`.
 
 The goal is to add RetroArch-style `.slangp` shader preset support to the native AGS OpenGL renderer through **librashader**, while preserving AGS' existing behavior when shaders are not requested or cannot be used.
 
@@ -53,6 +54,7 @@ These rules are deliberate project decisions and should not be changed casually.
    - Local machines are for running and validating workflow-produced binaries/artifacts on real hardware, not for compiling the project.
    - Do not ask the user to run local `cmake`, compiler, Cargo, linker or packaging commands for this project.
    - When hardware testing is required, provide a workflow that produces the exact test artifact and then give instructions only for downloading/running that artifact and collecting logs/results.
+   - Hardware-test artifacts should bundle the exact AGS runtime and librashader runtime they were built against so the user does not need to install or build librashader locally.
 
 ---
 
@@ -105,6 +107,7 @@ Last roadmap update: **2026-09-10**
 - [x] Complete final code/scope review of PR #1.
 - [x] Pass final CI run #20 on head `6c4079691aecbb4defee734a64fc94492831d44e`.
 - [x] Squash-merge PR #1 into `master` as `960f9630a9390e52cd9d8dcd0d4ba058fcf2315b`.
+- [x] Extend `Build Native AGS Shaders Linux` to build a self-contained hardware-test bundle containing AGS, librashader 0.12.0 and no-shader/shader launch helpers.
 
 ### Current CI baseline
 
@@ -123,6 +126,8 @@ This is the minimum regression baseline future shader-related changes should pre
 
 **Build policy:** all future builds and automated validation for this project must run in GitHub Actions. Real-hardware testing must use workflow-produced artifacts rather than locally compiled binaries.
 
+**Hardware-test bundle policy:** `Build Native AGS Shaders Linux` is the manual workflow for real-hardware validation. Its artifact must contain the forked AGS runtime, the matching librashader 0.12.0 OpenGL C-API runtime, build metadata and launch helpers. The user should only download, extract and run this artifact locally.
+
 ---
 
 ## Roadmap
@@ -133,7 +138,8 @@ Status: **merged and functionally complete in CI; post-merge hardware validation
 
 Remaining work:
 
-- [ ] Produce a downloadable real-hardware test artifact through GitHub Actions.
+- [x] Add a GitHub Actions workflow that produces a downloadable AGS + librashader real-hardware test bundle.
+- [ ] Successfully run that bundle workflow from the current branch/master and download its artifact.
 - [ ] Test that workflow-produced artifact on a real Linux desktop GPU rather than only Mesa software rendering/Xvfb.
 - [ ] Verify AMD/Mesa hardware behavior on CachyOS/KDE.
 - [ ] Verify no-shader behavior on real hardware.
@@ -229,6 +235,7 @@ librashader bridge:
 CI/runtime validation:
 
 - `.github/workflows/librashader-ci.yml`
+- `.github/workflows/build-native-shaders-linux.yml` — produces the downloadable AGS + librashader real-hardware test bundle.
 
 When changing these files, check whether this roadmap and validation status need updating in the same work session.
 
@@ -247,7 +254,8 @@ For shader-related work:
 7. Run the librashader automated shader smoke only through GitHub Actions.
 8. Do not require or instruct the user to compile AGS, librashader, Rust/Cargo dependencies or packaging locally.
 9. For graphics/context changes, have GitHub Actions produce a downloadable test artifact and validate that artifact on real hardware before declaring the work release-ready.
-10. Update this `AGENTS.md` whenever roadmap status, architecture decisions, validation coverage, build policy, or known limitations materially change.
+10. Hardware-test bundles should contain launch helpers that set the bundled librashader path and shader environment automatically; local setup should be limited to executable permissions if needed and running the supplied scripts.
+11. Update this `AGENTS.md` whenever roadmap status, architecture decisions, validation coverage, build policy, or known limitations materially change.
 
 Do not mark roadmap items complete from code inspection alone when they require runtime or hardware validation.
 
