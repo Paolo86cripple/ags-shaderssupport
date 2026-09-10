@@ -6,10 +6,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ags-librashader-test-linux-x86_64-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-linux:
-    name: Native AGS Linux x86_64
-    runs-on: ubuntu-latest
+    name: Native AGS + librashader Linux x86_64
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -19,17 +23,24 @@ jobs:
           persist-credentials: false
 
       - name: Install dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update -y
           sudo apt-get install -y \
-            cmake g++ pkg-config python3-pip \
+            cmake g++ git pkg-config python3-pip \
             gnome-desktop-testing libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
             libusb-1.0-0-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
             libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev fcitx-libs-dev
 
-      - name: Configure CMake
+          rustc --version
+          cargo --version
+
+      - name: Configure AGS
+        shell: bash
         run: |
+          set -euo pipefail
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DAGS_BUILD_TOOLS=OFF \
@@ -38,11 +49,173 @@ jobs:
             -DSDL_PIPEWIRE=OFF
 
       - name: Build AGS engine
-        run: cmake --build build --config Release --parallel 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config Release --parallel 4
+          test -x build/ags
 
-      - name: Upload Linux engine
+      - name: Build librashader 0.12.0 OpenGL runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch librashader-v0.12.0 \
+            https://github.com/SnowflakePowered/librashader.git /tmp/librashader
+
+          git -C /tmp/librashader rev-parse HEAD | tee /tmp/librashader-commit.txt
+
+          cd /tmp/librashader
+          cargo build \
+            --package librashader-capi \
+            --release \
+            --no-default-features \
+            --features runtime-opengl
+
+          test -f target/release/liblibrashader_capi.so
+
+      - name: Stage hardware test bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUNDLE_DIR="$PWD/dist/ags-librashader-test-linux-x86_64"
+          mkdir -p "$BUNDLE_DIR"
+
+          install -m 0755 build/ags "$BUNDLE_DIR/ags"
+          install -m 0755 /tmp/librashader/target/release/liblibrashader_capi.so "$BUNDLE_DIR/librashader.so.2"
+          install -m 0755 /tmp/librashader/target/release/liblibrashader_capi.so "$BUNDLE_DIR/librashader.so"
+
+          cat > "$BUNDLE_DIR/run-with-shader.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          if [[ $# -lt 2 ]]; then
+            echo "Usage: $0 /absolute/path/preset.slangp /path/to/game [extra AGS arguments...]" >&2
+            exit 2
+          fi
+
+          SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+          PRESET="$(realpath -- "$1")"
+          GAME="$(realpath -- "$2")"
+          shift 2
+
+          if [[ ! -f "$PRESET" ]]; then
+            echo "Shader preset not found: $PRESET" >&2
+            exit 2
+          fi
+
+          if [[ ! -e "$GAME" ]]; then
+            echo "AGS game not found: $GAME" >&2
+            exit 2
+          fi
+
+          export LD_LIBRARY_PATH="$SCRIPT_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export AGS_SHADER_CHAIN="$PRESET"
+          unset AGS_SHADER
+
+          echo "AGS runtime: $SCRIPT_DIR/ags"
+          echo "librashader: $SCRIPT_DIR/librashader.so.2"
+          echo "Shader preset: $AGS_SHADER_CHAIN"
+          echo "Game: $GAME"
+
+          exec "$SCRIPT_DIR/ags" \
+            --no-message-box \
+            --gfxdriver ogl \
+            --log-stdout=all:info \
+            "$@" \
+            "$GAME"
+          EOF
+
+          cat > "$BUNDLE_DIR/run-no-shader.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          if [[ $# -lt 1 ]]; then
+            echo "Usage: $0 /path/to/game [extra AGS arguments...]" >&2
+            exit 2
+          fi
+
+          SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+          GAME="$(realpath -- "$1")"
+          shift
+
+          if [[ ! -e "$GAME" ]]; then
+            echo "AGS game not found: $GAME" >&2
+            exit 2
+          fi
+
+          unset AGS_SHADER_CHAIN
+          unset AGS_SHADER
+
+          echo "AGS runtime: $SCRIPT_DIR/ags"
+          echo "Shader pipeline: disabled"
+          echo "Game: $GAME"
+
+          exec "$SCRIPT_DIR/ags" \
+            --no-message-box \
+            --gfxdriver ogl \
+            --log-stdout=all:info \
+            "$@" \
+            "$GAME"
+          EOF
+
+          chmod 0755 "$BUNDLE_DIR/run-with-shader.sh" "$BUNDLE_DIR/run-no-shader.sh"
+
+          AGS_SHA="${GITHUB_SHA}"
+          LIBRASHADER_SHA="$(cat /tmp/librashader-commit.txt)"
+
+          cat > "$BUNDLE_DIR/BUILD_INFO.txt" <<EOF
+          AGS shader-support hardware test bundle
+          =======================================
+          Repository: https://github.com/${GITHUB_REPOSITORY}
+          Ref: ${GITHUB_REF}
+          AGS fork commit: ${AGS_SHA}
+          librashader tag: librashader-v0.12.0
+          librashader commit: ${LIBRASHADER_SHA}
+          librashader backend: OpenGL
+          librashader C ABI: 2
+          Architecture: x86_64
+          Build type: Release
+          Runner: ubuntu-24.04
+
+          This artifact is intended for real-hardware testing on Linux.
+          No local compilation or librashader installation is required.
+
+          Baseline launch:
+            ./run-no-shader.sh /path/to/game 2>&1 | tee test-no-shader.log
+
+          Shader launch:
+            ./run-with-shader.sh /absolute/path/preset.slangp /path/to/game 2>&1 | tee test-shader.log
+          EOF
+
+      - name: Verify staged bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="$PWD/dist/ags-librashader-test-linux-x86_64"
+
+          test -x "$BUNDLE_DIR/ags"
+          test -x "$BUNDLE_DIR/run-with-shader.sh"
+          test -x "$BUNDLE_DIR/run-no-shader.sh"
+          test -s "$BUNDLE_DIR/librashader.so.2"
+          test -s "$BUNDLE_DIR/librashader.so"
+          test -s "$BUNDLE_DIR/BUILD_INFO.txt"
+
+          file "$BUNDLE_DIR/ags"
+          file "$BUNDLE_DIR/librashader.so.2"
+          ldd "$BUNDLE_DIR/ags"
+          ldd "$BUNDLE_DIR/librashader.so.2"
+
+          "$BUNDLE_DIR/run-with-shader.sh" 2>&1 | grep -F 'Usage:'
+          "$BUNDLE_DIR/run-no-shader.sh" 2>&1 | grep -F 'Usage:'
+
+          find "$BUNDLE_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Upload AGS + librashader hardware test bundle
         uses: actions/upload-artifact@v7
         with:
-          name: ags-native-shaders-linux-x86_64
-          path: build/ags
+          name: ags-librashader-test-linux-x86_64
+          path: dist/ags-librashader-test-linux-x86_64
           if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
